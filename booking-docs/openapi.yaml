@@ -1,0 +1,895 @@
+openapi: 3.1.0
+info:
+  title: booking API
+  version: 1.0.0
+  description: |
+    Programări la frizerie: proceduri, frizeri cu program și concedii, ore libere, programări simple și recurente.
+    Orele sunt în ora locală, fără fus orar: `2026-10-20T10:00:00`; orele din program: `09:00`.
+    Erorile au forma `ProblemDetail` (RFC 9457).
+servers:
+  - url: http://localhost:8080
+    description: local
+security:
+  - bearerAuth: []
+tags:
+  - name: auth
+    description: Cont și token JWT
+  - name: customers
+    description: Clienții (administrator)
+  - name: procedures
+    description: Ce se poate face la frizerie
+  - name: barbers
+    description: Frizerii
+  - name: schedule
+    description: Programul și concediile frizerilor
+  - name: appointments
+    description: Ore libere și programări
+  - name: recurring
+    description: Programări care se repetă
+
+paths:
+  /api/auth/register:
+    post:
+      tags: [auth]
+      summary: Creează un cont de client
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Cont creat
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/auth/login:
+    post:
+      tags: [auth]
+      summary: Întoarce un token JWT
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Autentificat
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/users/me:
+    get:
+      tags: [auth]
+      summary: Utilizatorul din token
+      operationId: getCurrentUser
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/customers:
+    get:
+      tags: [customers]
+      summary: Toți clienții (ADMIN)
+      operationId: getCustomers
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CustomerResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/customers/{id}/blocked:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    put:
+      tags: [customers]
+      summary: Blochează sau deblochează un client (ADMIN)
+      operationId: setCustomerBlocked
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BlockedRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/procedures:
+    get:
+      tags: [procedures]
+      summary: Procedurile active
+      operationId: getProcedures
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ProcedureResponse' }
+    post:
+      tags: [procedures]
+      summary: Adaugă o procedură (ADMIN)
+      operationId: createProcedure
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProcedureRequest' }
+      responses:
+        '201':
+          description: Creată
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcedureResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/procedures/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    put:
+      tags: [procedures]
+      summary: Modifică o procedură (ADMIN)
+      operationId: updateProcedure
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProcedureRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcedureResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [procedures]
+      summary: Retrage o procedură (ADMIN) — active = false, rândul rămâne
+      operationId: deactivateProcedure
+      responses:
+        '204': { description: Retrasă }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/barbers:
+    get:
+      tags: [barbers]
+      summary: Frizerii activi
+      operationId: getBarbers
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BarberResponse' }
+    post:
+      tags: [barbers]
+      summary: Adaugă un frizer, cu cont și profil (ADMIN)
+      operationId: createBarber
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BarberCreateRequest' }
+      responses:
+        '201':
+          description: Creat
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BarberResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/barbers/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [barbers]
+      summary: Profilul unui frizer
+      operationId: getBarber
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BarberResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [barbers]
+      summary: Modifică profilul unui frizer (ADMIN)
+      operationId: updateBarber
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BarberUpdateRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BarberResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [barbers]
+      summary: Retrage un frizer (ADMIN) — active = false; refuzat dacă are programări viitoare
+      operationId: deactivateBarber
+      responses:
+        '204': { description: Retras }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/barbers/{id}/schedule:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [schedule]
+      summary: Programul pe săptămână al unui frizer
+      operationId: getBarberSchedule
+      security: []
+      responses:
+        '200':
+          description: OK, ordonat după zi
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ScheduleDay' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [schedule]
+      summary: Înlocuiește tot programul (ADMIN sau frizerul însuși)
+      operationId: setBarberSchedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              maxItems: 7
+              items: { $ref: '#/components/schemas/ScheduleDay' }
+      responses:
+        '200':
+          description: Programul nou
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ScheduleDay' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/barbers/{id}/time-off:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [schedule]
+      summary: Perioadele libere ale unui frizer, de azi înainte
+      operationId: getBarberTimeOffs
+      security: []
+      responses:
+        '200':
+          description: OK, ordonat după început
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TimeOffResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [schedule]
+      summary: Adaugă o perioadă liberă (ADMIN sau frizerul însuși)
+      operationId: createBarberTimeOff
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TimeOffRequest' }
+      responses:
+        '201':
+          description: Creată
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TimeOffResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/barbers/{id}/time-off/{timeOffId}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - name: timeOffId
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    delete:
+      tags: [schedule]
+      summary: Șterge o perioadă liberă (ADMIN sau frizerul însuși)
+      operationId: deleteBarberTimeOff
+      responses:
+        '204': { description: Ștearsă }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/barbers/{id}/availability:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [appointments]
+      summary: Orele la care poate începe o programare
+      operationId: getAvailability
+      security: []
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+          example: '2026-10-20'
+        - name: procedureIds
+          in: query
+          required: true
+          description: Repetat — `?procedureIds=1&procedureIds=2`
+          style: form
+          explode: true
+          schema:
+            type: array
+            minItems: 1
+            items: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AvailabilityResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/barbers/{id}/appointments:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [appointments]
+      summary: Programările unui frizer pe o perioadă (ADMIN sau frizerul însuși)
+      operationId: getBarberAppointments
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+          example: '2026-10-20'
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date }
+          example: '2026-10-26'
+      responses:
+        '200':
+          description: OK, ordonat după oră
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AppointmentResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/appointments:
+    post:
+      tags: [appointments]
+      summary: Programare nouă (CUSTOMER neblocat)
+      operationId: createAppointment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AppointmentRequest' }
+      responses:
+        '201':
+          description: Creată, cu statusul BOOKED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/appointments/me:
+    get:
+      tags: [appointments]
+      summary: Programările clientului logat
+      operationId: getMyAppointments
+      responses:
+        '200':
+          description: OK, ordonat după oră
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AppointmentResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/appointments/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [appointments]
+      summary: O programare, cu procedurile (clientul ei, frizerul ei sau ADMIN)
+      operationId: getAppointment
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/appointments/{id}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [appointments]
+      summary: Anulează (clientul ei, frizerul ei sau ADMIN) — status CANCELED, rândul rămâne
+      operationId: cancelAppointment
+      responses:
+        '204': { description: Anulată }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/appointments/{id}/status:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    patch:
+      tags: [appointments]
+      summary: Confirmă sau marchează efectuată (frizerul ei sau ADMIN)
+      operationId: updateAppointmentStatus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StatusRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/recurring-appointments:
+    post:
+      tags: [recurring]
+      summary: Serie de programări (CUSTOMER neblocat) — toate sau niciuna
+      operationId: createRecurringAppointment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecurringAppointmentRequest' }
+      responses:
+        '201':
+          description: Seria și toate programările ei
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RecurringAppointmentResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Cel puțin o dată nu încape; nu s-a salvat nimic
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetail' }
+              example:
+                type: about:blank
+                title: Conflict
+                status: 409
+                detail: 2 of 6 dates are not available
+                instance: /api/recurring-appointments
+                conflictingDates: ['2026-11-03', '2026-12-01']
+
+  /api/recurring-appointments/me:
+    get:
+      tags: [recurring]
+      summary: Seriile clientului logat
+      operationId: getMyRecurringAppointments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/RecurringAppointmentResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/recurring-appointments/{id}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [recurring]
+      summary: Oprește seria (clientul ei) — active = false, programările viitoare devin CANCELED
+      operationId: cancelRecurringAppointment
+      responses:
+        '204': { description: Oprită }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+
+  responses:
+    BadRequest:
+      description: Date invalide
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetail' }
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            detail: Validation failed
+            instance: /api/procedures
+            errors:
+              name: must not be blank
+    Unauthorized:
+      description: Lipsește tokenul, e expirat sau login greșit
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetail' }
+    Forbidden:
+      description: Rol greșit, client blocat sau resursa nu e a ta
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetail' }
+    NotFound:
+      description: Nu există
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetail' }
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            detail: Barber 42 not found
+            instance: /api/barbers/42
+    Conflict:
+      description: Încalcă o regulă (unicitate, oră ocupată, status)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetail' }
+          example:
+            type: about:blank
+            title: Conflict
+            status: 409
+            detail: Barber 3 is not available at 2026-10-20T10:00
+            instance: /api/appointments
+
+  schemas:
+    Role:
+      type: string
+      enum: [CUSTOMER, BARBER, ADMIN]
+
+    AppointmentStatus:
+      type: string
+      enum: [BOOKED, CONFIRMED, CANCELED, COMPLETED]
+
+    RegisterRequest:
+      type: object
+      required: [email, password, firstName, lastName, phone]
+      properties:
+        email: { type: string, format: email, maxLength: 150, example: ana@example.com }
+        password: { type: string, minLength: 8, maxLength: 100, example: parola123 }
+        firstName: { type: string, minLength: 1, maxLength: 100, example: Ana }
+        lastName: { type: string, minLength: 1, maxLength: 100, example: Pop }
+        phone: { type: string, minLength: 1, maxLength: 20, example: '0722123456' }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, example: ana@example.com }
+        password: { type: string, example: parola123 }
+
+    TokenResponse:
+      type: object
+      required: [accessToken, tokenType, expiresIn]
+      properties:
+        accessToken: { type: string, example: eyJhbGciOiJIUzI1NiJ9... }
+        tokenType: { type: string, const: Bearer }
+        expiresIn: { type: integer, description: secunde, example: 3600 }
+
+    UserResponse:
+      type: object
+      required: [id, email, role, createdAt]
+      properties:
+        id: { type: integer, format: int64, example: 1 }
+        email: { type: string, example: ana@example.com }
+        role: { $ref: '#/components/schemas/Role' }
+        createdAt: { type: string, example: '2026-10-14T19:30:00' }
+
+    CustomerResponse:
+      type: object
+      required: [id, email, firstName, lastName, phone, blocked, createdAt]
+      properties:
+        id: { type: integer, format: int64, example: 5 }
+        email: { type: string, example: ana@example.com }
+        firstName: { type: string, example: Ana }
+        lastName: { type: string, example: Pop }
+        phone: { type: string, example: '0722123456' }
+        blocked: { type: boolean, example: false }
+        createdAt: { type: string, example: '2026-10-14T19:30:00' }
+
+    BlockedRequest:
+      type: object
+      required: [blocked]
+      properties:
+        blocked: { type: boolean, example: true }
+
+    ProcedureRequest:
+      type: object
+      required: [name, durationMinutes, price]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100, example: Tuns }
+        description: { type: [string, 'null'], maxLength: 500, example: Spălat inclus }
+        durationMinutes: { type: integer, minimum: 1, example: 30 }
+        price: { type: number, minimum: 0, example: 60.00 }
+
+    ProcedureResponse:
+      type: object
+      required: [id, name, durationMinutes, price, active]
+      properties:
+        id: { type: integer, format: int64, example: 1 }
+        name: { type: string, example: Tuns }
+        description: { type: [string, 'null'], example: Spălat inclus }
+        durationMinutes: { type: integer, example: 30 }
+        price: { type: number, example: 60.00 }
+        active: { type: boolean, example: true }
+
+    BarberCreateRequest:
+      type: object
+      required: [email, password, firstName, lastName, phone]
+      properties:
+        email: { type: string, format: email, maxLength: 150, example: mihai@barbershop.ro }
+        password: { type: string, minLength: 8, maxLength: 100, example: parola123 }
+        firstName: { type: string, minLength: 1, maxLength: 100, example: Mihai }
+        lastName: { type: string, minLength: 1, maxLength: 100, example: Ionescu }
+        phone: { type: string, minLength: 1, maxLength: 20, example: '0733111222' }
+
+    BarberUpdateRequest:
+      type: object
+      required: [firstName, lastName, phone]
+      properties:
+        firstName: { type: string, minLength: 1, maxLength: 100, example: Mihai }
+        lastName: { type: string, minLength: 1, maxLength: 100, example: Ionescu }
+        phone: { type: string, minLength: 1, maxLength: 20, example: '0733111222' }
+
+    BarberResponse:
+      type: object
+      required: [id, firstName, lastName, phone, active]
+      properties:
+        id: { type: integer, format: int64, example: 3 }
+        firstName: { type: string, example: Mihai }
+        lastName: { type: string, example: Ionescu }
+        phone: { type: string, example: '0733111222' }
+        active: { type: boolean, example: true }
+
+    ScheduleDay:
+      type: object
+      required: [dayOfWeek, startTime, endTime]
+      properties:
+        dayOfWeek: { type: integer, minimum: 1, maximum: 7, description: 1 = luni … 7 = duminică, example: 2 }
+        startTime: { type: string, example: '09:00' }
+        endTime: { type: string, description: După startTime, example: '17:00' }
+
+    TimeOffRequest:
+      type: object
+      required: [startDatetime, endDatetime]
+      properties:
+        startDatetime: { type: string, example: '2026-10-22T12:00:00' }
+        endDatetime: { type: string, description: După startDatetime, example: '2026-10-22T13:00:00' }
+        reason: { type: [string, 'null'], maxLength: 200, example: Pauză de masă }
+
+    TimeOffResponse:
+      type: object
+      required: [id, barberId, startDatetime, endDatetime]
+      properties:
+        id: { type: integer, format: int64, example: 11 }
+        barberId: { type: integer, format: int64, example: 3 }
+        startDatetime: { type: string, example: '2026-10-22T12:00:00' }
+        endDatetime: { type: string, example: '2026-10-22T13:00:00' }
+        reason: { type: [string, 'null'], example: Pauză de masă }
+
+    AvailabilityResponse:
+      type: object
+      required: [barberId, date, durationMinutes, startTimes]
+      properties:
+        barberId: { type: integer, format: int64, example: 3 }
+        date: { type: string, format: date, example: '2026-10-20' }
+        durationMinutes: { type: integer, description: Suma duratelor procedurilor, example: 45 }
+        startTimes:
+          type: array
+          description: Din 15 în 15 minute, ordonate
+          items: { type: string }
+          example: ['09:00', '09:15', '11:30']
+
+    AppointmentRequest:
+      type: object
+      required: [barberId, startTime, procedureIds]
+      properties:
+        barberId: { type: integer, format: int64, example: 3 }
+        startTime: { type: string, description: În viitor și liberă la getAvailability, example: '2026-10-20T10:00:00' }
+        procedureIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: integer, format: int64 }
+          example: [1, 2]
+        notes: { type: [string, 'null'], maxLength: 500, example: Doar pe laterale }
+
+    AppointmentProcedureResponse:
+      type: object
+      required: [procedureId, name, price, durationMinutes]
+      properties:
+        procedureId: { type: integer, format: int64, example: 1 }
+        name: { type: string, example: Tuns }
+        price: { type: number, description: Copiat la programare, example: 60.00 }
+        durationMinutes: { type: integer, description: Copiat la programare, example: 30 }
+
+    AppointmentResponse:
+      type: object
+      required: [id, customerId, customerName, barberId, barberName, startTime, endTime, status, procedures, totalPrice, createdAt]
+      properties:
+        id: { type: integer, format: int64, example: 15 }
+        customerId: { type: integer, format: int64, example: 5 }
+        customerName: { type: string, example: Ana Pop }
+        barberId: { type: integer, format: int64, example: 3 }
+        barberName: { type: string, example: Mihai Ionescu }
+        recurringAppointmentId: { type: [integer, 'null'], format: int64, example: null }
+        startTime: { type: string, example: '2026-10-20T10:00:00' }
+        endTime: { type: string, example: '2026-10-20T10:45:00' }
+        status: { $ref: '#/components/schemas/AppointmentStatus' }
+        notes: { type: [string, 'null'], example: Doar pe laterale }
+        procedures:
+          type: array
+          items: { $ref: '#/components/schemas/AppointmentProcedureResponse' }
+        totalPrice: { type: number, example: 95.00 }
+        createdAt: { type: string, example: '2026-10-14T19:45:00' }
+
+    StatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          description: Doar înainte — BOOKED → CONFIRMED → COMPLETED
+          enum: [CONFIRMED, COMPLETED]
+
+    RecurringAppointmentRequest:
+      type: object
+      required: [barberId, procedureIds, startDate, startTime, intervalWeeks, endDate]
+      properties:
+        barberId: { type: integer, format: int64, example: 3 }
+        procedureIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: integer, format: int64 }
+          example: [1]
+        startDate: { type: string, format: date, description: Ziua săptămânii seriei, example: '2026-10-20' }
+        startTime: { type: string, example: '10:00' }
+        intervalWeeks: { type: integer, minimum: 1, maximum: 8, example: 2 }
+        endDate: { type: string, format: date, description: Cel mult 6 luni după startDate, example: '2026-12-29' }
+
+    RecurringAppointmentResponse:
+      type: object
+      required: [id, barberId, barberName, startDate, endDate, startTime, intervalWeeks, active, appointments]
+      properties:
+        id: { type: integer, format: int64, example: 4 }
+        barberId: { type: integer, format: int64, example: 3 }
+        barberName: { type: string, example: Mihai Ionescu }
+        startDate: { type: string, format: date, example: '2026-10-20' }
+        endDate: { type: string, format: date, example: '2026-12-29' }
+        startTime: { type: string, example: '10:00' }
+        intervalWeeks: { type: integer, example: 2 }
+        active: { type: boolean, example: true }
+        appointments:
+          type: array
+          items: { $ref: '#/components/schemas/AppointmentResponse' }
+
+    ProblemDetail:
+      type: object
+      required: [title, status]
+      properties:
+        type: { type: string, example: about:blank }
+        title: { type: string, example: Conflict }
+        status: { type: integer, example: 409 }
+        detail: { type: string, example: Barber 3 is not available at 2026-10-20T10:00 }
+        instance: { type: string, example: /api/appointments }
+        errors:
+          type: object
+          description: Doar la 400 de validare — câmp → mesaj
+          additionalProperties: { type: string }
+        conflictingDates:
+          type: array
+          description: Doar la 409 de la createRecurringAppointment
+          items: { type: string, format: date }
