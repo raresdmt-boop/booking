@@ -1,6 +1,7 @@
 
 package com.barbershop.booking.appointments.models;
 
+import com.barbershop.booking.barbers.models.Barber;
 import com.barbershop.booking.customers.models.Customer;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
@@ -50,6 +51,11 @@ public class RecurringAppointment {
     @Column(name = "start_time", nullable = false)
     private LocalTime startTime;
 
+    @NotNull
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "barber_id", nullable = false)
+    private Barber barber;
+
     protected RecurringAppointment() {
     }
 
@@ -57,12 +63,14 @@ public class RecurringAppointment {
                                 Integer intervalWeeks,
                                 LocalDate startDate,
                                 LocalDate endDate,
-                                LocalTime startTime) {
+                                LocalTime startTime,
+                                Barber barber) {
         this.customer = customer;
         this.intervalWeeks = intervalWeeks;
         this.startDate = startDate;
         this.endDate = endDate;
         this.startTime = startTime;
+        this.barber = barber;
     }
 
     @Override
@@ -86,6 +94,7 @@ public class RecurringAppointment {
                 ", endDate=" + endDate +
                 ", active=" + active +
                 ", startTime=" + startTime +
+                ", barberId=" + barber.getId() +
                 '}';
     }
 }

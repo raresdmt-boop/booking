@@ -1,7 +1,9 @@
 package com.barbershop.booking.barbers.models;
 
+import com.barbershop.booking.appointments.models.RecurringAppointment;
+import com.barbershop.booking.procedures.models.Procedure;
+import com.barbershop.booking.users.models.User;
 import jakarta.persistence.*;
-import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;
 import lombok.Setter;
@@ -36,17 +38,15 @@ public class Barber {
     private String phone;
 
     @Setter
-    @NotBlank(message = "Email is required")
-    @Email(message = "Email must be a valid address")
-    @Column(name = "email", nullable = false, length = 150)
-    private String email;
-
-    @Setter
     @Column(name = "active", nullable = false)
-    private boolean active = true;
+    private boolean active;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    @OneToOne(fetch =  FetchType.LAZY, optional = false)
+    @JoinColumn(name = "user_id", nullable = false, unique = true)
+    private User user;
 
     @OneToMany(mappedBy = "barber")
     private List<Appointment> appointments = new ArrayList<>();
@@ -57,15 +57,22 @@ public class Barber {
     @OneToMany(mappedBy = "barber")
     private List<BarberTimeOff> timeOffs = new ArrayList<>();
 
+    @OneToMany(mappedBy = "barber")
+    private List<Procedure> procedures = new ArrayList<>();
+
+    @OneToMany(mappedBy = "barber")
+    private List<RecurringAppointment> recurringAppointments = new ArrayList<>();
+
     protected Barber() {
     }
 
     public Barber(String firstName, String lastName,
-                  String phone, String email) {
+                  String phone, User user) {
         this.firstName = firstName;
         this.lastName = lastName;
         this.phone = phone;
-        this.email = email;
+        this.user = user;
+        this.active = true;
         this.createdAt = LocalDateTime.now();
     }
 
@@ -88,9 +95,9 @@ public class Barber {
                 ", firstName='" + firstName + '\'' +
                 ", lastName='" + lastName + '\'' +
                 ", phone='" + phone + '\'' +
-                ", email='" + email + '\'' +
                 ", active=" + active +
                 ", createdAt=" + createdAt +
+                ", userId=" + user.getId() +
                 '}';
     }
 }

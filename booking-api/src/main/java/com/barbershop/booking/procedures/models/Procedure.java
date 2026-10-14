@@ -1,6 +1,7 @@
 
 package com.barbershop.booking.procedures.models;
 
+import com.barbershop.booking.barbers.models.Barber;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -16,7 +17,11 @@ import java.math.BigDecimal;
 
 @Getter
 @Entity(name = "Procedure")
-@Table(name = "procedures")
+@Table(name = "procedures",
+uniqueConstraints = {
+        @UniqueConstraint(name = "uk_barber_id_procedure_name",
+        columnNames = {"barber_id", "name"})
+})
 public class Procedure {
 
     @Id
@@ -51,15 +56,21 @@ public class Procedure {
     @OneToMany(mappedBy = "procedure")
     private List<AppointmentProcedure> appointmentProcedures = new ArrayList<>();
 
+    @NotNull
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "barber_id", nullable = false)
+    private Barber barber;
+
     protected Procedure() {
     }
 
     public Procedure(String name, String description,
-                     Integer durationMinutes, BigDecimal price) {
+                     Integer durationMinutes, BigDecimal price, Barber barber) {
         this.name = name;
         this.description = description;
         this.durationMinutes = durationMinutes;
         this.price = price;
+        this.barber = barber;
     }
 
     @Override
@@ -83,6 +94,7 @@ public class Procedure {
                 ", durationMinutes=" + durationMinutes +
                 ", price=" + price +
                 ", active=" + active +
+                ", barberId=" + barber.getId() +
                 '}';
     }
 }

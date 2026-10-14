@@ -12,7 +12,12 @@ import java.time.LocalTime;
 
 @Getter
 @Entity(name = "BarberSchedule")
-@Table(name = "barber_schedule")
+@Table(name = "barber_schedule",
+uniqueConstraints = {
+        @UniqueConstraint(
+                name = "uk_barber_day_of_week",
+                columnNames = {"barber_id", "day_of_week"})
+})
 public class BarberSchedule {
 
     @Id
