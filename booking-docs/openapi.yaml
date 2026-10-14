@@ -3,7 +3,7 @@ info:
   title: booking API
   version: 1.0.0
   description: |
-    Programări la frizerie: proceduri, frizeri cu program și concedii, ore libere, programări simple și recurente.
+    Programări la frizerie: frizeri cu procedurile și prețurile lor, program și concedii, ore libere, programări simple și recurente.
     Orele sunt în ora locală, fără fus orar: `2026-10-20T10:00:00`; orele din program: `09:00`.
     Erorile au forma `ProblemDetail` (RFC 9457).
 servers:
@@ -17,7 +17,7 @@ tags:
   - name: customers
     description: Clienții (administrator)
   - name: procedures
-    description: Ce se poate face la frizerie
+    description: Procedurile fiecărui frizer, cu prețurile lui
   - name: barbers
     description: Frizerii
   - name: schedule
@@ -120,73 +120,6 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
-  /api/procedures:
-    get:
-      tags: [procedures]
-      summary: Procedurile active
-      operationId: getProcedures
-      security: []
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/ProcedureResponse' }
-    post:
-      tags: [procedures]
-      summary: Adaugă o procedură (ADMIN)
-      operationId: createProcedure
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ProcedureRequest' }
-      responses:
-        '201':
-          description: Creată
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ProcedureResponse' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '409': { $ref: '#/components/responses/Conflict' }
-
-  /api/procedures/{id}:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    put:
-      tags: [procedures]
-      summary: Modifică o procedură (ADMIN)
-      operationId: updateProcedure
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ProcedureRequest' }
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ProcedureResponse' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-    delete:
-      tags: [procedures]
-      summary: Retrage o procedură (ADMIN) — active = false, rândul rămâne
-      operationId: deactivateProcedure
-      responses:
-        '204': { description: Retrasă }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
   /api/barbers:
     get:
       tags: [barbers]
@@ -265,6 +198,78 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/barbers/{id}/procedures:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [procedures]
+      summary: Procedurile active ale unui frizer, cu prețurile lui
+      operationId: getBarberProcedures
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ProcedureResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [procedures]
+      summary: Adaugă o procedură la frizer (ADMIN sau frizerul însuși)
+      operationId: createBarberProcedure
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProcedureRequest' }
+      responses:
+        '201':
+          description: Creată
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcedureResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/barbers/{id}/procedures/{procedureId}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/ProcedureId'
+    put:
+      tags: [procedures]
+      summary: Modifică o procedură a frizerului (ADMIN sau frizerul însuși)
+      operationId: updateBarberProcedure
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProcedureRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcedureResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [procedures]
+      summary: Retrage o procedură (ADMIN sau frizerul însuși) — active = false, rândul rămâne
+      operationId: deactivateBarberProcedure
+      responses:
+        '204': { description: Retrasă }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /api/barbers/{id}/schedule:
     parameters:
@@ -380,7 +385,7 @@ paths:
         - name: procedureIds
           in: query
           required: true
-          description: Repetat — `?procedureIds=1&procedureIds=2`
+          description: Repetat — `?procedureIds=1&procedureIds=2`; toate ale frizerului din cale
           style: form
           explode: true
           schema:
@@ -596,6 +601,11 @@ components:
       in: path
       required: true
       schema: { type: integer, format: int64 }
+    ProcedureId:
+      name: procedureId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
 
   responses:
     BadRequest:
@@ -608,7 +618,7 @@ components:
             title: Bad Request
             status: 400
             detail: Validation failed
-            instance: /api/procedures
+            instance: /api/barbers
             errors:
               name: must not be blank
     Unauthorized:
@@ -716,9 +726,10 @@ components:
 
     ProcedureResponse:
       type: object
-      required: [id, name, durationMinutes, price, active]
+      required: [id, barberId, name, durationMinutes, price, active]
       properties:
         id: { type: integer, format: int64, example: 1 }
+        barberId: { type: integer, format: int64, example: 3 }
         name: { type: string, example: Tuns }
         description: { type: [string, 'null'], example: Spălat inclus }
         durationMinutes: { type: integer, example: 30 }
@@ -800,6 +811,7 @@ components:
         startTime: { type: string, description: În viitor și liberă la getAvailability, example: '2026-10-20T10:00:00' }
         procedureIds:
           type: array
+          description: Toate ale frizerului ales
           minItems: 1
           uniqueItems: true
           items: { type: integer, format: int64 }
