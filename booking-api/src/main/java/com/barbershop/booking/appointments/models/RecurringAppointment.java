@@ -94,7 +94,7 @@ public class RecurringAppointment {
                 ", endDate=" + endDate +
                 ", active=" + active +
                 ", startTime=" + startTime +
-                ", barberId=" + barber.getId() +
+                ", barberId=" + (barber != null ? barber.getId() : null) +
                 '}';
     }
 }
