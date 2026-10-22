@@ -1,13 +1,12 @@
-
 package com.barbershop.booking.customers.services.interfaces;
 
-import com.barbershop.booking.customers.models.Customer;
+import com.barbershop.booking.customers.dtos.CustomerResponse;
+
 import java.util.List;
 
 public interface CustomerQueryService {
 
-    Customer getCustomerById(Long id);
+    CustomerResponse getCustomerById(Long id);
 
-    List<Customer> getAllCustomers();
-
+    List<CustomerResponse> getCustomers();
 }

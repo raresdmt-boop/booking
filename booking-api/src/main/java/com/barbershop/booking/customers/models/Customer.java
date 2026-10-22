@@ -92,7 +92,7 @@ public class Customer {
                 ", phone='" + phone + '\'' +
                 ", blocked=" + blocked +
                 ", createdAt=" + createdAt +
-                ", userId=" + user.getId() +
+                ", userId=" + (user != null ? user.getId() : null) +
                 '}';
     }
 }

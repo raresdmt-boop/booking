@@ -1,6 +1,7 @@
 
 package com.barbershop.booking.barbers.models;
 
+import com.barbershop.booking.barbers.exceptions.BarberScheduleStartTimeMustBeBeforeEndTime;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -35,12 +36,10 @@ public class BarberSchedule {
     @Column(name = "day_of_week", nullable = false)
     private int dayOfWeek;
 
-    @Setter
     @NotNull
     @Column(name = "start_time", nullable = false)
     private LocalTime startTime;
 
-    @Setter
     @NotNull
     @Column(name = "end_time", nullable = false)
     private LocalTime endTime;
@@ -50,8 +49,24 @@ public class BarberSchedule {
 
     public BarberSchedule(Barber barber, int dayOfWeek,
                           LocalTime startTime, LocalTime endTime) {
+        if (startTime == null || endTime == null ||
+                !endTime.isAfter(startTime)) {
+            throw new BarberScheduleStartTimeMustBeBeforeEndTime();
+        }
         this.barber = barber;
         this.dayOfWeek = dayOfWeek;
+        this.startTime = startTime;
+        this.endTime = endTime;
+    }
+
+    public void updateWorkingHours(LocalTime startTime, LocalTime endTime) {
+        if (startTime == null || endTime == null ||
+                !endTime.isAfter(startTime)) {
+            throw new IllegalArgumentException(
+                    "End time must be after start time"
+            );
+        }
+
         this.startTime = startTime;
         this.endTime = endTime;
     }

@@ -97,7 +97,7 @@ public class Barber {
                 ", phone='" + phone + '\'' +
                 ", active=" + active +
                 ", createdAt=" + createdAt +
-                ", userId=" + user.getId() +
+                ", userId=" + (user != null ? user.getId() : null) +
                 '}';
     }
 }

@@ -94,7 +94,7 @@ public class Procedure {
                 ", durationMinutes=" + durationMinutes +
                 ", price=" + price +
                 ", active=" + active +
-                ", barberId=" + barber.getId() +
+                ", barberId=" + (barber != null ? barber.getId() : null) +
                 '}';
     }
 }
