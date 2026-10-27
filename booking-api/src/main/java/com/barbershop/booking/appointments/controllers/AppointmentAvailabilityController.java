@@ -1,4 +1,4 @@
-package com.barbershop.booking.appointments.controller;
+package com.barbershop.booking.appointments.controllers;
 
 import com.barbershop.booking.appointments.services.appointment.interfaces.AppointmentAvailabilityService;
 import org.springframework.web.bind.annotation.GetMapping;

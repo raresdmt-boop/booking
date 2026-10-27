@@ -5,6 +5,7 @@ import com.barbershop.booking.appointments.exceptions.AppointmentProcedureNotFou
 import com.barbershop.booking.appointments.exceptions.AppointmentProceduresRequired;
 import com.barbershop.booking.appointments.repositories.AppointmentRepository;
 import com.barbershop.booking.appointments.services.appointment.interfaces.AppointmentAvailabilityService;
+import com.barbershop.booking.barbers.exceptions.BarberDoesNotHaveThisProcedure;
 import com.barbershop.booking.barbers.models.BarberSchedule;
 import com.barbershop.booking.barbers.repositories.BarberScheduleRepository;
 import com.barbershop.booking.barbers.repositories.BarberTimeOffRepository;
@@ -68,7 +69,7 @@ public class AppointmentAvailabilityServiceImpl
 
         for (Procedure procedure : procedures) {
             if (!procedure.getBarber().getId().equals(barberId)) {
-                throw new AppointmentProcedureNotFound();
+                throw new BarberDoesNotHaveThisProcedure();
             }
         }
 
@@ -91,6 +92,7 @@ public class AppointmentAvailabilityServiceImpl
         if (schedule == null) {
             return List.of();
         }
+
         List<LocalTime> availableSlots = new ArrayList<>();
 
         LocalTime currentTime = schedule.getStartTime();
