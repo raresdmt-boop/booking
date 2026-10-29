@@ -183,28 +183,36 @@ public class AppointmentCommandServiceImpl implements AppointmentCommandService 
             startTime = appointment.getStartTime();
         }
 
-        LocalDateTime endTime;
+        List<AppointmentProcedure> appointmentProcedures =
+                appointmentProcedureRepository.findByAppointmentId(appointment.getId());
 
-        if (request.endTime() != null) {
-            endTime = request.endTime();
-        } else {
-            endTime = appointment.getEndTime();
+        int totalDuration = 0;
+
+        for (AppointmentProcedure appointmentProcedure : appointmentProcedures) {
+            totalDuration += appointmentProcedure.getDurationMinutes();
         }
 
+        LocalDateTime endTime = startTime.plusMinutes(totalDuration);
+
         validateTimeInterval(startTime, endTime);
+
+
 
         boolean timeChanged =
                 !startTime.equals(appointment.getStartTime())
                         || !endTime.equals(appointment.getEndTime());
 
         if (timeChanged) {
+            validateBarberSchedule(appointment.getBarber().getId(), startTime, endTime);
+            validateBarberTimeOff(appointment.getBarber().getId(), startTime, endTime);
+
             boolean unavailable =
                     appointmentRepository.hasOverlappingAppointment(
                             appointment.getBarber().getId(),
                             appointment.getId(),
                             AppointmentStatus.CANCELED,
-                            endTime,
-                            startTime
+                            startTime,
+                            endTime
                     );
 
             if (unavailable) {
@@ -219,7 +227,15 @@ public class AppointmentCommandServiceImpl implements AppointmentCommandService 
             appointment.setNotes(request.notes());
         }
 
-        return AppointmentResponse.from(appointment);
+        List<AppointmentProcedureResponse> procedureResponses = new ArrayList<>();
+
+        for (AppointmentProcedure appointmentProcedure : appointmentProcedures) {
+            procedureResponses.add(
+                    AppointmentProcedureResponse.from(appointmentProcedure)
+            );
+        }
+
+        return AppointmentResponse.from(appointment, procedureResponses);
     }
 
     @Override

@@ -13,10 +13,6 @@ public record AppointmentUpdateRequest(
                 example = "2026-11-10T11:00:00")
         LocalDateTime startTime,
 
-        @Schema(description = "Appointment end time",
-                example = "2026-11-10T11:30:00")
-        LocalDateTime endTime,
-
         @Schema(description = "Appointment notes",
                 example = "Haircut and beard trim")
         String notes

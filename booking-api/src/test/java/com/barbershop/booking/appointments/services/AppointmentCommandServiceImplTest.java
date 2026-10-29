@@ -11,6 +11,7 @@ import com.barbershop.booking.appointments.repositories.AppointmentRepository;
 import com.barbershop.booking.appointments.services.appointment.AppointmentCommandServiceImpl;
 import com.barbershop.booking.barbers.exceptions.BarberNotFound;
 import com.barbershop.booking.barbers.models.Barber;
+import com.barbershop.booking.barbers.models.BarberTimeOff;
 import com.barbershop.booking.barbers.repositories.BarberRepository;
 import com.barbershop.booking.barbers.repositories.BarberTimeOffRepository;
 import com.barbershop.booking.customers.exceptions.CustomerNotFound;
@@ -39,6 +40,7 @@ import com.barbershop.booking.appointments.models.AppointmentProcedure;
 import com.barbershop.booking.procedures.models.Procedure;
 import com.barbershop.booking.support.ProcedureFixtures;
 
+import java.time.Month;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.anyList;
@@ -681,11 +683,38 @@ class AppointmentCommandServiceImplTest {
             Appointment appointment = AppointmentFixtures.persisted(customer, barber);
 
             LocalDateTime newStartTime = startTime.plusHours(2);
+
+            Procedure procedure = ProcedureFixtures.persisted();
+            procedure.setDurationMinutes(30);
+
+            AppointmentProcedure appointmentProcedure = new AppointmentProcedure(
+                    appointment,
+                    procedure,
+                    procedure.getPrice(),
+                    procedure.getDurationMinutes()
+            );
+
+            ReflectionTestUtils.setField(appointmentProcedure, "id", 10L);
+
+            when(appointmentProcedureRepository.findByAppointmentId(appointment.getId()))
+                    .thenReturn(List.of(appointmentProcedure));
+
+            BarberSchedule schedule = new BarberSchedule(
+                    barber,
+                    newStartTime.getDayOfWeek().getValue(),
+                    LocalTime.of(9, 0),
+                    LocalTime.of(17, 0)
+            );
+
+            when(barberScheduleRepository.findByBarberIdAndDayOfWeek(
+                    barber.getId(),
+                    newStartTime.getDayOfWeek().getValue()
+            )).thenReturn(Optional.of(schedule));
+
             LocalDateTime newEndTime = endTime.plusHours(2);
 
             AppointmentUpdateRequest request = new AppointmentUpdateRequest(
                     newStartTime,
-                    newEndTime,
                     null
             );
 
@@ -696,8 +725,8 @@ class AppointmentCommandServiceImplTest {
                     barber.getId(),
                     appointment.getId(),
                     AppointmentStatus.CANCELED,
-                    newEndTime,
-                    newStartTime
+                    newStartTime,
+                    newStartTime.plusMinutes(30)
             )).thenReturn(false);
 
             AppointmentResponse response =
@@ -711,8 +740,8 @@ class AppointmentCommandServiceImplTest {
                     barber.getId(),
                     appointment.getId(),
                     AppointmentStatus.CANCELED,
-                    newEndTime,
-                    newStartTime
+                    newStartTime,
+                    newStartTime.plusMinutes(30)
             );
         }
 
@@ -721,8 +750,22 @@ class AppointmentCommandServiceImplTest {
         void shouldUpdateOnlyNotes() {
             Appointment appointment = AppointmentFixtures.persisted(customer, barber);
 
+            Procedure procedure = ProcedureFixtures.persisted();
+            procedure.setDurationMinutes(30);
+
+            AppointmentProcedure appointmentProcedure = new AppointmentProcedure(
+                    appointment,
+                    procedure,
+                    procedure.getPrice(),
+                    procedure.getDurationMinutes()
+            );
+
+            ReflectionTestUtils.setField(appointmentProcedure, "id", 10L);
+
+            when(appointmentProcedureRepository.findByAppointmentId(appointment.getId()))
+                    .thenReturn(List.of(appointmentProcedure));
+
             AppointmentUpdateRequest request = new AppointmentUpdateRequest(
-                    null,
                     null,
                     "Updated notes"
             );
@@ -747,11 +790,37 @@ class AppointmentCommandServiceImplTest {
         void shouldUpdateOnlyStartTime() {
             Appointment appointment = AppointmentFixtures.persisted(customer, barber);
 
+            Procedure procedure = ProcedureFixtures.persisted();
+            procedure.setDurationMinutes(30);
+
+            AppointmentProcedure appointmentProcedure = new AppointmentProcedure(
+                    appointment,
+                    procedure,
+                    procedure.getPrice(),
+                    procedure.getDurationMinutes()
+            );
+
+            ReflectionTestUtils.setField(appointmentProcedure, "id", 10L);
+
+            when(appointmentProcedureRepository.findByAppointmentId(appointment.getId()))
+                    .thenReturn(List.of(appointmentProcedure));
+
             LocalDateTime newStartTime = startTime.plusMinutes(10);
+
+            BarberSchedule schedule = new BarberSchedule(
+                    barber,
+                    newStartTime.getDayOfWeek().getValue(),
+                    LocalTime.of(9, 0),
+                    LocalTime.of(17, 0)
+            );
+
+            when(barberScheduleRepository.findByBarberIdAndDayOfWeek(
+                    barber.getId(),
+                    newStartTime.getDayOfWeek().getValue()
+            )).thenReturn(Optional.of(schedule));
 
             AppointmentUpdateRequest request = new AppointmentUpdateRequest(
                     newStartTime,
-                    null,
                     null
             );
 
@@ -762,45 +831,14 @@ class AppointmentCommandServiceImplTest {
                     commandService.updateAppointment(appointment.getId(), request);
 
             assertThat(response.startTime()).isEqualTo(newStartTime);
-            assertThat(response.endTime()).isEqualTo(endTime);
+            assertThat(response.endTime()).isEqualTo(newStartTime.plusMinutes(30));
 
             verify(appointmentRepository).hasOverlappingAppointment(
                     barber.getId(),
                     appointment.getId(),
                     AppointmentStatus.CANCELED,
-                    endTime,
-                    newStartTime
-            );
-        }
-
-        @Test
-        @DisplayName("Should update only end time")
-        void shouldUpdateOnlyEndTime() {
-            Appointment appointment = AppointmentFixtures.persisted(customer, barber);
-
-            LocalDateTime newEndTime = endTime.plusMinutes(15);
-
-            AppointmentUpdateRequest request = new AppointmentUpdateRequest(
-                    null,
-                    newEndTime,
-                    null
-            );
-
-            when(appointmentRepository.findById(appointment.getId()))
-                    .thenReturn(Optional.of(appointment));
-
-            AppointmentResponse response =
-                    commandService.updateAppointment(appointment.getId(), request);
-
-            assertThat(response.startTime()).isEqualTo(startTime);
-            assertThat(response.endTime()).isEqualTo(newEndTime);
-
-            verify(appointmentRepository).hasOverlappingAppointment(
-                    barber.getId(),
-                    appointment.getId(),
-                    AppointmentStatus.CANCELED,
-                    newEndTime,
-                    startTime
+                    newStartTime,
+                    newStartTime.plusMinutes(30)
             );
         }
 
@@ -809,9 +847,23 @@ class AppointmentCommandServiceImplTest {
         void shouldNotCheckOverlapWhenTimesAreUnchanged() {
             Appointment appointment = AppointmentFixtures.persisted(customer, barber);
 
+            Procedure procedure = ProcedureFixtures.persisted();
+            procedure.setDurationMinutes(30);
+
+            AppointmentProcedure appointmentProcedure = new AppointmentProcedure(
+                    appointment,
+                    procedure,
+                    procedure.getPrice(),
+                    procedure.getDurationMinutes()
+            );
+
+            ReflectionTestUtils.setField(appointmentProcedure, "id", 10L);
+
+            when(appointmentProcedureRepository.findByAppointmentId(appointment.getId()))
+                    .thenReturn(List.of(appointmentProcedure));
+
             AppointmentUpdateRequest request = new AppointmentUpdateRequest(
                     startTime,
-                    endTime,
                     "New notes"
             );
 
@@ -833,7 +885,6 @@ class AppointmentCommandServiceImplTest {
         void shouldThrowExceptionWhenAppointmentDoesNotExist() {
             AppointmentUpdateRequest request = new AppointmentUpdateRequest(
                     startTime,
-                    endTime,
                     "Updated notes"
             );
 
@@ -850,12 +901,36 @@ class AppointmentCommandServiceImplTest {
         void shouldThrowExceptionWhenNewTimeSlotIsUnavailable() {
             Appointment appointment = AppointmentFixtures.persisted(customer, barber);
 
+            Procedure procedure = ProcedureFixtures.persisted();
+            procedure.setDurationMinutes(30);
+
+            AppointmentProcedure appointmentProcedure = new AppointmentProcedure(
+                    appointment,
+                    procedure,
+                    procedure.getPrice(),
+                    procedure.getDurationMinutes()
+            );
+
+            when(appointmentProcedureRepository.findByAppointmentId(appointment.getId()))
+                    .thenReturn(List.of(appointmentProcedure));
+
             LocalDateTime newStartTime = startTime.plusHours(2);
             LocalDateTime newEndTime = endTime.plusHours(2);
 
+            BarberSchedule schedule = new BarberSchedule(
+                    barber,
+                    newStartTime.getDayOfWeek().getValue(),
+                    LocalTime.of(9, 0),
+                    LocalTime.of(17, 0)
+            );
+
+            when(barberScheduleRepository.findByBarberIdAndDayOfWeek(
+                    barber.getId(),
+                    newStartTime.getDayOfWeek().getValue()
+            )).thenReturn(Optional.of(schedule));
+
             AppointmentUpdateRequest request = new AppointmentUpdateRequest(
                     newStartTime,
-                    newEndTime,
                     null
             );
 
@@ -866,8 +941,8 @@ class AppointmentCommandServiceImplTest {
                     barber.getId(),
                     appointment.getId(),
                     AppointmentStatus.CANCELED,
-                    newEndTime,
-                    newStartTime
+                    newStartTime,
+                    newEndTime
             )).thenReturn(true);
 
             assertThatThrownBy(() ->
@@ -879,48 +954,6 @@ class AppointmentCommandServiceImplTest {
         }
 
         @Test
-        @DisplayName("Should throw exception when end time is before start time")
-        void shouldThrowExceptionWhenEndTimeIsBeforeStartTime() {
-            Appointment appointment = AppointmentFixtures.persisted(customer, barber);
-
-            AppointmentUpdateRequest request = new AppointmentUpdateRequest(
-                    startTime,
-                    startTime.minusMinutes(10),
-                    null
-            );
-
-            when(appointmentRepository.findById(appointment.getId()))
-                    .thenReturn(Optional.of(appointment));
-
-            assertThatThrownBy(() ->
-                    commandService.updateAppointment(appointment.getId(), request)
-            ).isInstanceOf(AppointmentInvalidTimeInterval.class);
-
-            verify(appointmentRepository, never()).hasOverlappingAppointment(
-                    any(), any(), any(), any(), any()
-            );
-        }
-
-        @Test
-        @DisplayName("Should throw exception when start and end times are equal")
-        void shouldThrowExceptionWhenStartAndEndTimesAreEqual() {
-            Appointment appointment = AppointmentFixtures.persisted(customer, barber);
-
-            AppointmentUpdateRequest request = new AppointmentUpdateRequest(
-                    startTime,
-                    startTime,
-                    null
-            );
-
-            when(appointmentRepository.findById(appointment.getId()))
-                    .thenReturn(Optional.of(appointment));
-
-            assertThatThrownBy(() ->
-                    commandService.updateAppointment(appointment.getId(), request)
-            ).isInstanceOf(AppointmentInvalidTimeInterval.class);
-        }
-
-        @Test
         @DisplayName("Should throw exception when appointment is canceled")
         void shouldThrowExceptionWhenAppointmentIsCanceled() {
             Appointment appointment = AppointmentFixtures.persisted(customer, barber);
@@ -928,7 +961,6 @@ class AppointmentCommandServiceImplTest {
 
             AppointmentUpdateRequest request = new AppointmentUpdateRequest(
                     startTime.plusHours(1),
-                    endTime.plusHours(1),
                     null
             );
 
@@ -948,7 +980,6 @@ class AppointmentCommandServiceImplTest {
 
             AppointmentUpdateRequest request = new AppointmentUpdateRequest(
                     startTime.plusHours(1),
-                    endTime.plusHours(1),
                     null
             );
 
@@ -959,6 +990,157 @@ class AppointmentCommandServiceImplTest {
                     commandService.updateAppointment(appointment.getId(), request)
             ).isInstanceOf(AppointmentInvalidStatus.class);
         }
+
+        @Test
+        @DisplayName("Should throw exception when updated appointment is outside working hours")
+        void shouldThrowExceptionWhenUpdatedAppointmentIsOutsideWorkingHours() {
+
+            Appointment appointment = AppointmentFixtures.persisted(customer, barber);
+
+            LocalDateTime newStartTime = startTime.withHour(18);
+
+            AppointmentUpdateRequest request = new AppointmentUpdateRequest(newStartTime, null);
+
+            when(appointmentRepository.findById(appointment.getId()))
+                    .thenReturn(Optional.of(appointment));
+
+            Procedure procedure = ProcedureFixtures.persisted();
+
+            procedure.setDurationMinutes(30);
+
+            AppointmentProcedure appointmentProcedure = new AppointmentProcedure(
+                    appointment,
+                    procedure,
+                    procedure.getPrice(),
+                    procedure.getDurationMinutes()
+            );
+
+            when(appointmentProcedureRepository.findByAppointmentId(appointment.getId()))
+                    .thenReturn(List.of(appointmentProcedure));
+
+            BarberSchedule barberSchedule = new BarberSchedule(
+                    barber,
+                    newStartTime.getDayOfWeek().getValue(),
+                    LocalTime.of(9, 0),
+                    LocalTime.of(17, 0)
+            );
+
+            when(barberScheduleRepository.findByBarberIdAndDayOfWeek(
+                    barber.getId(),
+                    newStartTime.getDayOfWeek().getValue()
+            )).thenReturn(Optional.of(barberSchedule));
+
+            assertThatThrownBy(() ->
+                    commandService.updateAppointment(appointment.getId(), request))
+                    .isInstanceOf(AppointmentTimeSlotUnavailable.class);
+        }
+
+        @Test
+        @DisplayName("Should throw exception when updated appointment overlaps with barber time off")
+        void shouldThrowExceptionWhenUpdatedAppointmentOverlapsBarberTimeOff() {
+
+            Appointment appointment = AppointmentFixtures.persisted(customer, barber);
+
+            LocalDateTime newStartTime = startTime.withHour(12).withMinute(15);
+
+            AppointmentUpdateRequest request = new AppointmentUpdateRequest(newStartTime, null);
+
+            when(appointmentRepository.findById(appointment.getId())).
+                    thenReturn(Optional.of(appointment));
+
+            Procedure procedure = ProcedureFixtures.persisted();
+            procedure.setDurationMinutes(30);
+
+            AppointmentProcedure appointmentProcedure = new AppointmentProcedure(
+                    appointment,
+                    procedure,
+                    procedure.getPrice(),
+                    procedure.getDurationMinutes()
+            );
+
+            when(appointmentProcedureRepository.findByAppointmentId(appointment.getId()))
+                    .thenReturn(List.of(appointmentProcedure));
+
+            BarberSchedule schedule = new BarberSchedule(
+                    barber,
+                    newStartTime.getDayOfWeek().getValue(),
+                    LocalTime.of(9, 0),
+                    LocalTime.of(17, 0)
+            );
+
+            when(barberScheduleRepository.findByBarberIdAndDayOfWeek(
+                    barber.getId(),
+                    newStartTime.getDayOfWeek().getValue()))
+                    .thenReturn(Optional.of(schedule));
+
+            when(barberTimeOffRepository.hasOverlappingTimeOff(
+                    barber.getId(),
+                    newStartTime,
+                    newStartTime.plusMinutes(30)
+            ))
+                    .thenReturn(true);
+
+            assertThatThrownBy(() -> commandService.updateAppointment(appointment.getId(), request))
+                    .isInstanceOf(AppointmentTimeSlotUnavailable.class);
+
+        }
+
+        @Test
+        @DisplayName("Should throw exception when updated appointment overlaps with another appointment")
+        void  shouldThrowExceptionWhenUpdatedAppointmentOverlapsAnotherAppointment() {
+            Appointment appointment = AppointmentFixtures.persisted(customer, barber);
+
+            LocalDateTime newStartTime = startTime.withHour(12).withMinute(15);
+
+            AppointmentUpdateRequest request = new AppointmentUpdateRequest(newStartTime, null);
+
+            when(appointmentRepository.findById(appointment.getId()))
+                .thenReturn(Optional.of(appointment));
+
+            Procedure procedure = ProcedureFixtures.persisted();
+            procedure.setDurationMinutes(30);
+
+            AppointmentProcedure appointmentProcedure = new AppointmentProcedure(
+                    appointment,
+                    procedure,
+                    procedure.getPrice(),
+                    procedure.getDurationMinutes()
+            );
+
+            when(appointmentProcedureRepository.findByAppointmentId(appointment.getId()))
+                    .thenReturn(List.of(appointmentProcedure));
+
+            BarberSchedule schedule = new BarberSchedule(
+                    barber,
+                    newStartTime.getDayOfWeek().getValue(),
+                    LocalTime.of(9,0),
+                    LocalTime.of(17, 0)
+            );
+
+            when(barberScheduleRepository.findByBarberIdAndDayOfWeek(
+                    barber.getId(),
+                    newStartTime.getDayOfWeek().getValue()))
+                    .thenReturn(Optional.of(schedule));
+
+            when(appointmentRepository.hasOverlappingAppointment(barber.getId(),
+                    appointment.getId(),
+                    AppointmentStatus.CANCELED,
+                    newStartTime,
+                    newStartTime.plusMinutes(30)))
+                    .thenReturn(true);
+
+            assertThatThrownBy(() -> commandService.updateAppointment(appointment.getId(), request))
+                    .isInstanceOf(AppointmentTimeSlotUnavailable.class);
+
+            verify(appointmentRepository).hasOverlappingAppointment(
+                    barber.getId(),
+                    appointment.getId(),
+                    AppointmentStatus.CANCELED,
+                    newStartTime,
+                    newStartTime.plusMinutes(30)
+            );
+        }
+
     }
 
     @Nested

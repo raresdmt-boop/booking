@@ -95,16 +95,11 @@ public class AppointmentAvailabilityServiceImpl
 
         List<LocalTime> availableSlots = new ArrayList<>();
 
-        LocalTime currentTime = schedule.getStartTime();
-        LocalTime closingTime = schedule.getEndTime();
+        LocalDateTime slotStart = date.atTime(schedule.getStartTime());
+        LocalDateTime closingDateTime = date.atTime(schedule.getEndTime());
 
-        LocalDateTime closingDateTime = date.atTime(closingTime);
+        while (!slotStart.plusMinutes(totalDuration).isAfter(closingDateTime)) {
 
-        while (!date.atTime(currentTime)
-                .plusMinutes(totalDuration)
-                .isAfter(closingDateTime)) {
-
-            LocalDateTime slotStart = date.atTime(currentTime);
             LocalDateTime slotEnd = slotStart.plusMinutes(totalDuration);
 
             boolean occupied = appointmentRepository.hasOverlappingAppointmentExcludingId(
@@ -121,10 +116,10 @@ public class AppointmentAvailabilityServiceImpl
             );
 
             if (!occupied && !timeOff) {
-                availableSlots.add(currentTime);
+                availableSlots.add(slotStart.toLocalTime());
             }
 
-            currentTime = currentTime.plusMinutes(15);
+            slotStart = slotStart.plusMinutes(15);
         }
 
         return availableSlots;

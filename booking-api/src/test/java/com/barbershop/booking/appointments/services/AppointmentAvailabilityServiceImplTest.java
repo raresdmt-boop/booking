@@ -15,6 +15,7 @@ import com.barbershop.booking.procedures.repository.ProcedureRepository;
 import com.barbershop.booking.support.BarberFixtures;
 import com.barbershop.booking.support.ProcedureFixtures;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -345,5 +346,29 @@ class AppointmentAvailabilityServiceImplTest {
         );
 
         assertThat(result).isEmpty();
+    }
+    @Test
+    @Timeout(2)
+    void getAvailableSlots_doesNotLoopForeverNearMidnight() {
+        Procedure procedure = ProcedureFixtures.persisted();
+        procedure.setDurationMinutes(10);
+
+        when(procedureRepository.findAllById(PROCEDURE_IDS))
+                .thenReturn(List.of(procedure));
+
+        mockSchedule(LocalTime.of(22, 0), LocalTime.of(23, 59));
+        mockNoAppointments();
+        mockNoTimeOff();
+
+        List<LocalTime> result = service.getAvailableSlots(
+                BARBER_ID,
+                DATE,
+                PROCEDURE_IDS
+        );
+
+        assertThat(result)
+                .hasSize(8)
+                .startsWith(LocalTime.of(22, 0))
+                .endsWith(LocalTime.of(23, 45));
     }
 }

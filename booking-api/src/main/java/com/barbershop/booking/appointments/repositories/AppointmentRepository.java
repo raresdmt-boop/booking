@@ -33,8 +33,8 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
     boolean hasOverlappingAppointmentExcludingId(
             Long barberId,
             AppointmentStatus status,
-            LocalDateTime endTime,
-            LocalDateTime startTime
+            LocalDateTime startTime,
+            LocalDateTime endTime
     );
 
 
@@ -59,8 +59,8 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
             Long barberId,
             Long appointmentId,
             AppointmentStatus status,
-            LocalDateTime endTime,
-            LocalDateTime startTime
+            LocalDateTime startTime,
+            LocalDateTime endTime
     );
 
 
@@ -68,8 +68,8 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
             Long barberId,
             Long appointmentId,
             AppointmentStatus status,
-            LocalDateTime endTime,
-            LocalDateTime startTime
+            LocalDateTime startTime,
+            LocalDateTime endTime
     );
 
 
