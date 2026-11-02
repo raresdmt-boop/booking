@@ -59,8 +59,8 @@ class AppointmentQueryServiceImplTest {
         barber = BarberFixtures.persisted();
         appointment = AppointmentFixtures.persisted(customer, barber);
 
-        startTime = LocalDateTime.of(2026, 10, 20, 10, 0);
-        endTime = LocalDateTime.of(2026, 10, 20, 10, 30);
+        startTime = appointment.getStartTime();
+        endTime = appointment.getEndTime();
     }
 
     @Nested

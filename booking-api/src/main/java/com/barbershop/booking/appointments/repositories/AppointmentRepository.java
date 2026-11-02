@@ -30,19 +30,11 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
         AND a.startTime < :endTime
         AND a.endTime > :startTime
         """)
-    boolean hasOverlappingAppointmentExcludingId(
+    boolean hasOverlappingAppointment(
             Long barberId,
             AppointmentStatus status,
             LocalDateTime startTime,
             LocalDateTime endTime
-    );
-
-
-    boolean existsByBarberIdAndStatusNotAndStartTimeLessThanAndEndTimeGreaterThan(
-            Long barberId,
-            AppointmentStatus status,
-            LocalDateTime endTime,
-            LocalDateTime startTime
     );
 
 
@@ -55,7 +47,7 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
         AND a.startTime < :endTime
         AND a.endTime > :startTime
         """)
-    boolean hasOverlappingAppointment(
+    boolean hasOverlappingAppointmentExcludingAppointmentId(
             Long barberId,
             Long appointmentId,
             AppointmentStatus status,
@@ -63,10 +55,15 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
             LocalDateTime endTime
     );
 
-
-    boolean existsByBarberIdAndIdNotAndStatusNotAndStartTimeLessThanAndEndTimeGreaterThan(
+    @Query("""
+    SELECT a FROM Appointment a
+    WHERE a.barber.id = :barberId
+    AND a.status <> :status
+    AND a.startTime < :endTime
+    AND a.endTime > :startTime
+    """)
+    List<Appointment> findOverlappingAppointments(
             Long barberId,
-            Long appointmentId,
             AppointmentStatus status,
             LocalDateTime startTime,
             LocalDateTime endTime

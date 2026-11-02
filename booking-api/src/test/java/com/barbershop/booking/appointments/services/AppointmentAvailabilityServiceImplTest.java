@@ -2,17 +2,23 @@
 package com.barbershop.booking.appointments.services;
 
 import com.barbershop.booking.appointments.exceptions.AppointmentDuplicateProcedure;
+import com.barbershop.booking.appointments.exceptions.AppointmentProcedureBarberMismatch;
 import com.barbershop.booking.appointments.exceptions.AppointmentProcedureNotFound;
 import com.barbershop.booking.appointments.exceptions.AppointmentProceduresRequired;
+import com.barbershop.booking.appointments.models.Appointment;
 import com.barbershop.booking.appointments.models.AppointmentStatus;
 import com.barbershop.booking.appointments.repositories.AppointmentRepository;
 import com.barbershop.booking.appointments.services.appointment.AppointmentAvailabilityServiceImpl;
+import com.barbershop.booking.barbers.exceptions.BarberDoesNotHaveThisProcedure;
 import com.barbershop.booking.barbers.models.BarberSchedule;
+import com.barbershop.booking.barbers.models.BarberTimeOff;
 import com.barbershop.booking.barbers.repositories.BarberScheduleRepository;
 import com.barbershop.booking.barbers.repositories.BarberTimeOffRepository;
 import com.barbershop.booking.procedures.models.Procedure;
 import com.barbershop.booking.procedures.repository.ProcedureRepository;
+import com.barbershop.booking.support.AppointmentFixtures;
 import com.barbershop.booking.support.BarberFixtures;
+import com.barbershop.booking.support.CustomerFixtures;
 import com.barbershop.booking.support.ProcedureFixtures;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -30,8 +36,6 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -78,20 +82,20 @@ class AppointmentAvailabilityServiceImplTest {
     }
 
     private void mockNoAppointments() {
-        when(appointmentRepository.hasOverlappingAppointmentExcludingId(
+        when(appointmentRepository.findOverlappingAppointments(
                 eq(BARBER_ID),
                 eq(AppointmentStatus.CANCELED),
                 any(LocalDateTime.class),
                 any(LocalDateTime.class)
-        )).thenReturn(false);
+        )).thenReturn(List.of());
     }
 
     private void mockNoTimeOff() {
-        when(barberTimeOffRepository.hasOverlappingTimeOff(
+        when(barberTimeOffRepository.findOverlappingTimeOff(
                 eq(BARBER_ID),
                 any(LocalDateTime.class),
                 any(LocalDateTime.class)
-        )).thenReturn(false);
+        )).thenReturn(List.of());
     }
 
     @Test
@@ -160,7 +164,7 @@ class AppointmentAvailabilityServiceImplTest {
                         DATE,
                         PROCEDURE_IDS
                 )
-        ).isInstanceOf(AppointmentProcedureNotFound.class);
+        ).isInstanceOf(AppointmentProcedureBarberMismatch.class);
     }
 
     @Test
@@ -185,6 +189,8 @@ class AppointmentAvailabilityServiceImplTest {
     void getAvailableSlots_returnsEmptyWhenProcedureDoesNotFitSchedule() {
         mockProcedure();
         mockSchedule(LocalTime.of(9, 0), LocalTime.of(9, 15));
+        mockNoAppointments();
+        mockNoTimeOff();
 
         List<LocalTime> result = service.getAvailableSlots(
                 BARBER_ID,
@@ -193,8 +199,6 @@ class AppointmentAvailabilityServiceImplTest {
         );
 
         assertThat(result).isEmpty();
-
-        verifyNoInteractions(appointmentRepository, barberTimeOffRepository);
     }
 
     @Test
@@ -238,21 +242,20 @@ class AppointmentAvailabilityServiceImplTest {
         mockProcedure();
         mockSchedule(LocalTime.of(9, 0), LocalTime.of(10, 0));
 
-        when(appointmentRepository.hasOverlappingAppointmentExcludingId(
+        Appointment appointment = AppointmentFixtures.persisted(
+                CustomerFixtures.persisted(),
+                BarberFixtures.persisted()
+        );
+
+        appointment.setStartTime(DATE.atTime(9, 15));
+        appointment.setEndTime(DATE.atTime(9, 45));
+
+        when(appointmentRepository.findOverlappingAppointments(
                 eq(BARBER_ID),
                 eq(AppointmentStatus.CANCELED),
                 any(LocalDateTime.class),
                 any(LocalDateTime.class)
-        )).thenAnswer(invocation -> {
-            LocalDateTime slotStart = invocation.getArgument(3);
-            LocalDateTime slotEnd = invocation.getArgument(2);
-
-            LocalDateTime appointmentStart = DATE.atTime(9, 15);
-            LocalDateTime appointmentEnd = DATE.atTime(9, 45);
-
-            return slotStart.isBefore(appointmentEnd)
-                    && slotEnd.isAfter(appointmentStart);
-        });
+        )).thenReturn(List.of(appointment));
 
         mockNoTimeOff();
 
@@ -271,20 +274,18 @@ class AppointmentAvailabilityServiceImplTest {
         mockSchedule(LocalTime.of(9, 0), LocalTime.of(10, 0));
         mockNoAppointments();
 
-        when(barberTimeOffRepository.hasOverlappingTimeOff(
+        BarberTimeOff timeOff = new BarberTimeOff(
+                BarberFixtures.persisted(),
+                DATE.atTime(9, 15),
+                DATE.atTime(9, 45),
+                "Personal time off"
+        );
+
+        when(barberTimeOffRepository.findOverlappingTimeOff(
                 eq(BARBER_ID),
                 any(LocalDateTime.class),
                 any(LocalDateTime.class)
-        )).thenAnswer(invocation -> {
-            LocalDateTime slotStart = invocation.getArgument(1);
-            LocalDateTime slotEnd = invocation.getArgument(2);
-
-            LocalDateTime timeOffStart = DATE.atTime(9, 15);
-            LocalDateTime timeOffEnd = DATE.atTime(9, 45);
-
-            return slotStart.isBefore(timeOffEnd)
-                    && slotEnd.isAfter(timeOffStart);
-        });
+        )).thenReturn(List.of(timeOff));
 
         List<LocalTime> result = service.getAvailableSlots(
                 BARBER_ID,
@@ -301,20 +302,18 @@ class AppointmentAvailabilityServiceImplTest {
         mockSchedule(LocalTime.of(9, 0), LocalTime.of(9, 45));
         mockNoAppointments();
 
-        when(barberTimeOffRepository.hasOverlappingTimeOff(
+        BarberTimeOff timeOff = new BarberTimeOff(
+                BarberFixtures.persisted(),
+                DATE.atTime(9, 30),
+                DATE.atTime(10, 0),
+                "Personal time off"
+        );
+
+        when(barberTimeOffRepository.findOverlappingTimeOff(
                 eq(BARBER_ID),
                 any(LocalDateTime.class),
                 any(LocalDateTime.class)
-        )).thenAnswer(invocation -> {
-            LocalDateTime slotStart = invocation.getArgument(1);
-            LocalDateTime slotEnd = invocation.getArgument(2);
-
-            LocalDateTime timeOffStart = DATE.atTime(9, 30);
-            LocalDateTime timeOffEnd = DATE.atTime(10, 0);
-
-            return slotStart.isBefore(timeOffEnd)
-                    && slotEnd.isAfter(timeOffStart);
-        });
+        )).thenReturn(List.of(timeOff));
 
         List<LocalTime> result = service.getAvailableSlots(
                 BARBER_ID,
@@ -330,13 +329,20 @@ class AppointmentAvailabilityServiceImplTest {
         mockProcedure();
         mockSchedule(LocalTime.of(9, 0), LocalTime.of(10, 0));
 
-        when(appointmentRepository.hasOverlappingAppointmentExcludingId(
+        Appointment appointment = AppointmentFixtures.persisted(
+                CustomerFixtures.persisted(),
+                BarberFixtures.persisted()
+        );
+
+        appointment.setStartTime(DATE.atTime(9, 0));
+        appointment.setEndTime(DATE.atTime(10, 0));
+
+        when(appointmentRepository.findOverlappingAppointments(
                 eq(BARBER_ID),
                 eq(AppointmentStatus.CANCELED),
                 any(LocalDateTime.class),
                 any(LocalDateTime.class)
-        )).thenReturn(true);
-
+        )).thenReturn(List.of(appointment));
         mockNoTimeOff();
 
         List<LocalTime> result = service.getAvailableSlots(
@@ -347,6 +353,7 @@ class AppointmentAvailabilityServiceImplTest {
 
         assertThat(result).isEmpty();
     }
+
     @Test
     @Timeout(2)
     void getAvailableSlots_doesNotLoopForeverNearMidnight() {

@@ -31,11 +31,10 @@ class AppointmentTest {
             assertThat(appointment.getCustomer()).isNull();
             assertThat(appointment.getBarber()).isNull();
 
-            assertThat(appointment.getStartTime())
-                    .isEqualTo(LocalDateTime.of(2026, 10, 20, 10, 0));
+            assertThat(appointment.getStartTime()).isNotNull();
 
             assertThat(appointment.getEndTime())
-                    .isEqualTo(LocalDateTime.of(2026, 10, 20, 10, 30));
+                    .isEqualTo(appointment.getStartTime().plusMinutes(30));
 
             assertThat(appointment.getNotes())
                     .isEqualTo("Test appointment");
@@ -236,8 +235,8 @@ class AppointmentTest {
 
             assertThat(result)
                     .contains("id=1")
-                    .contains("startTime=2026-10-20T10:00")
-                    .contains("endTime=2026-10-20T10:30")
+                    .contains("startTime=" + appointment.getStartTime())
+                    .contains("endTime=" + appointment.getEndTime())
                     .contains("status=BOOKED")
                     .contains("notes='Test appointment'")
                     .contains("createdAt=");

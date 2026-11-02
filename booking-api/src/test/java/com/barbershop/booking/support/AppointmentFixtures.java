@@ -5,6 +5,7 @@ import com.barbershop.booking.barbers.models.Barber;
 import com.barbershop.booking.customers.models.Customer;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 public final class AppointmentFixtures {
@@ -12,18 +13,28 @@ public final class AppointmentFixtures {
     public static final Long KNOWN_ID = 1L;
     public static final Long OTHER_ID = 2L;
 
+
+
     private AppointmentFixtures() {
     }
 
     public static Appointment appointment(Customer customer, Barber barber) {
-        return new Appointment(
-                customer,
-                barber,
-                LocalDateTime.of(2026, 10, 20, 10, 0),
-                LocalDateTime.of(2026, 10, 20, 10, 30),
-                "Test appointment"
-        );
-    }
+
+            LocalDateTime startTime = LocalDateTime.now()
+                    .plusDays(7)
+                    .withHour(10)
+                    .withMinute(0)
+                    .withSecond(0)
+                    .withNano(0);
+
+            return new Appointment(
+                    customer,
+                    barber,
+                    startTime,
+                    startTime.plusMinutes(30),
+                    "Test appointment"
+            );
+        }
 
     public static Appointment withId(
             Long id, Customer customer, Barber barber) {

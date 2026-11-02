@@ -9,14 +9,15 @@ import com.barbershop.booking.appointments.models.Appointment;
 import com.barbershop.booking.appointments.models.AppointmentStatus;
 import com.barbershop.booking.appointments.repositories.AppointmentRepository;
 import com.barbershop.booking.appointments.services.appointment.AppointmentCommandServiceImpl;
+import com.barbershop.booking.barbers.exceptions.BarberNotActive;
 import com.barbershop.booking.barbers.exceptions.BarberNotFound;
 import com.barbershop.booking.barbers.models.Barber;
-import com.barbershop.booking.barbers.models.BarberTimeOff;
 import com.barbershop.booking.barbers.repositories.BarberRepository;
 import com.barbershop.booking.barbers.repositories.BarberTimeOffRepository;
 import com.barbershop.booking.customers.exceptions.CustomerNotFound;
 import com.barbershop.booking.customers.models.Customer;
 import com.barbershop.booking.customers.repository.CustomerRepository;
+import com.barbershop.booking.procedures.exceptions.ProcedureNotActive;
 import com.barbershop.booking.support.BarberFixtures;
 import com.barbershop.booking.support.CustomerFixtures;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,7 +41,7 @@ import com.barbershop.booking.appointments.models.AppointmentProcedure;
 import com.barbershop.booking.procedures.models.Procedure;
 import com.barbershop.booking.support.ProcedureFixtures;
 
-import java.time.Month;
+import java.math.BigDecimal;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.anyList;
@@ -90,14 +91,22 @@ class AppointmentCommandServiceImplTest {
     private Barber barber;
     private LocalDateTime startTime;
     private LocalDateTime endTime;
+    private Procedure procedure;
 
     @BeforeEach
     void setUp() {
         customer = CustomerFixtures.persisted();
         barber = BarberFixtures.persisted();
+        procedure = ProcedureFixtures.persisted();
 
-        startTime = LocalDateTime.of(2026, 10, 20, 10, 0);
-        endTime = LocalDateTime.of(2026, 10, 20, 10, 30);
+
+        startTime = LocalDateTime.now().plusDays(7)
+                .withHour(10)
+                .withMinute(0)
+                .withSecond(0)
+                .withNano(0);
+
+        endTime = startTime.plusMinutes(30);
     }
 
 
@@ -307,7 +316,8 @@ class AppointmentCommandServiceImplTest {
         @DisplayName("Should allow appointment ending exactly at closing time")
         void shouldAllowAppointmentEndingExactlyAtClosingTime() {
 
-            startTime = startTime.withHour(16).withMinute(30);
+            startTime = startTime.withHour(16).withMinute(30)
+                    .withSecond(0).withNano(0);
 
             Procedure haircut = createProcedure(1L, 30);
 
@@ -391,11 +401,11 @@ class AppointmentCommandServiceImplTest {
                     .extracting("procedureId")
                     .containsExactly(1L, 2L);
 
-            verify(appointmentRepository).hasOverlappingAppointmentExcludingId(
+            verify(appointmentRepository).hasOverlappingAppointment(
                     barber.getId(),
                     AppointmentStatus.CANCELED,
-                    expectedEndTime,
-                    startTime
+                    startTime,
+                    expectedEndTime
             );
 
             verify(appointmentRepository).save(any(Appointment.class));
@@ -470,11 +480,11 @@ class AppointmentCommandServiceImplTest {
             when(procedureRepository.findAllById(anyList()))
                     .thenReturn(List.of(haircut));
 
-            when(appointmentRepository.hasOverlappingAppointmentExcludingId(
+            when(appointmentRepository.hasOverlappingAppointment(
                     barber.getId(),
                     AppointmentStatus.CANCELED,
-                    startTime.plusMinutes(30),
-                    startTime
+                    startTime,
+                    startTime.plusMinutes(30)
             )).thenReturn(true);
 
             assertThatThrownBy(() -> commandService.addAppointment(request))
@@ -671,6 +681,58 @@ class AppointmentCommandServiceImplTest {
             verify(appointmentProcedureRepository, never())
                     .save(any(AppointmentProcedure.class));
         }
+
+        @Test
+        @DisplayName("Should reject appointment in the past")
+        void shouldRejectAppointmentInThePast() {
+
+            startTime = LocalDateTime.now().minusDays(1);
+
+            AppointmentCreateRequest request =
+                    createRequest(List.of(1L));
+
+            mockCustomerAndBarber();
+
+            assertThatThrownBy(() -> commandService.addAppointment(request))
+                    .isInstanceOf(AppointmentInvalidTimeInterval.class);
+
+            verify(appointmentRepository, never()).save(any(Appointment.class));
+
+        }
+
+        @Test
+        @DisplayName("Should reject appointment when barber is inactive")
+        void shouldRejectAppointmentWhenBarberIsInactive() {
+            barber.setActive(false);
+
+            AppointmentCreateRequest request = createRequest(List.of(1L));
+
+            mockCustomerAndBarber();
+
+            assertThatThrownBy(() -> commandService.addAppointment(request))
+                    .isInstanceOf(BarberNotActive.class);
+
+            verify(appointmentRepository, never()).save(any(Appointment.class));
+        }
+
+        @Test
+        @DisplayName("Should reject appointment when procedure is inactive")
+        void shouldRejectAppointmentWhenProcedureIsInactive() {
+            Procedure haircut = createProcedure(1L, 30);
+            haircut.setActive(false);
+
+            AppointmentCreateRequest request = createRequest(List.of(1L));
+
+            mockCustomerAndBarber();
+
+            when(procedureRepository.findAllById(anyList()))
+                    .thenReturn(List.of(haircut));
+
+            assertThatThrownBy(() -> commandService.addAppointment(request))
+                    .isInstanceOf(ProcedureNotActive.class);
+
+            verify(appointmentRepository, never()).save(any(Appointment.class));
+        }
     }
 
     @Nested
@@ -721,7 +783,7 @@ class AppointmentCommandServiceImplTest {
             when(appointmentRepository.findById(appointment.getId()))
                     .thenReturn(Optional.of(appointment));
 
-            when(appointmentRepository.hasOverlappingAppointment(
+            when(appointmentRepository.hasOverlappingAppointmentExcludingAppointmentId(
                     barber.getId(),
                     appointment.getId(),
                     AppointmentStatus.CANCELED,
@@ -736,7 +798,7 @@ class AppointmentCommandServiceImplTest {
             assertThat(response.endTime()).isEqualTo(newEndTime);
             assertThat(response.notes()).isEqualTo("Test appointment");
 
-            verify(appointmentRepository).hasOverlappingAppointment(
+            verify(appointmentRepository).hasOverlappingAppointmentExcludingAppointmentId(
                     barber.getId(),
                     appointment.getId(),
                     AppointmentStatus.CANCELED,
@@ -780,7 +842,7 @@ class AppointmentCommandServiceImplTest {
             assertThat(response.endTime()).isEqualTo(endTime);
             assertThat(response.notes()).isEqualTo("Updated notes");
 
-            verify(appointmentRepository, never()).hasOverlappingAppointment(
+            verify(appointmentRepository, never()).hasOverlappingAppointmentExcludingAppointmentId(
                     any(), any(), any(), any(), any()
             );
         }
@@ -833,7 +895,7 @@ class AppointmentCommandServiceImplTest {
             assertThat(response.startTime()).isEqualTo(newStartTime);
             assertThat(response.endTime()).isEqualTo(newStartTime.plusMinutes(30));
 
-            verify(appointmentRepository).hasOverlappingAppointment(
+            verify(appointmentRepository).hasOverlappingAppointmentExcludingAppointmentId(
                     barber.getId(),
                     appointment.getId(),
                     AppointmentStatus.CANCELED,
@@ -875,7 +937,7 @@ class AppointmentCommandServiceImplTest {
 
             assertThat(response.notes()).isEqualTo("New notes");
 
-            verify(appointmentRepository, never()).hasOverlappingAppointment(
+            verify(appointmentRepository, never()).hasOverlappingAppointmentExcludingAppointmentId(
                     any(), any(), any(), any(), any()
             );
         }
@@ -937,7 +999,7 @@ class AppointmentCommandServiceImplTest {
             when(appointmentRepository.findById(appointment.getId()))
                     .thenReturn(Optional.of(appointment));
 
-            when(appointmentRepository.hasOverlappingAppointment(
+            when(appointmentRepository.hasOverlappingAppointmentExcludingAppointmentId(
                     barber.getId(),
                     appointment.getId(),
                     AppointmentStatus.CANCELED,
@@ -1122,7 +1184,7 @@ class AppointmentCommandServiceImplTest {
                     newStartTime.getDayOfWeek().getValue()))
                     .thenReturn(Optional.of(schedule));
 
-            when(appointmentRepository.hasOverlappingAppointment(barber.getId(),
+            when(appointmentRepository.hasOverlappingAppointmentExcludingAppointmentId(barber.getId(),
                     appointment.getId(),
                     AppointmentStatus.CANCELED,
                     newStartTime,
@@ -1132,7 +1194,7 @@ class AppointmentCommandServiceImplTest {
             assertThatThrownBy(() -> commandService.updateAppointment(appointment.getId(), request))
                     .isInstanceOf(AppointmentTimeSlotUnavailable.class);
 
-            verify(appointmentRepository).hasOverlappingAppointment(
+            verify(appointmentRepository).hasOverlappingAppointmentExcludingAppointmentId(
                     barber.getId(),
                     appointment.getId(),
                     AppointmentStatus.CANCELED,
@@ -1141,6 +1203,34 @@ class AppointmentCommandServiceImplTest {
             );
         }
 
+        @Test
+        @DisplayName("Should reject updating appointment to a past date")
+        void shouldRejectUpdatingAppointmentToPastDate() {
+
+            Appointment appointment = AppointmentFixtures.persisted(customer, barber);
+
+            LocalDateTime pastTime = LocalDateTime.now().minusDays(1);
+
+            AppointmentUpdateRequest request = new AppointmentUpdateRequest(
+                    pastTime,
+                    null
+            );
+
+            when(appointmentRepository.findById(appointment.getId()))
+                    .thenReturn(Optional.of(appointment));
+
+            assertThatThrownBy(() ->
+                    commandService.updateAppointment(appointment.getId(), request)
+            ).isInstanceOf(AppointmentInvalidTimeInterval.class);
+
+            assertThat(appointment.getStartTime())
+                    .isEqualTo(startTime);
+
+            verify(appointmentRepository, never())
+                    .hasOverlappingAppointmentExcludingAppointmentId(
+                            any(), any(), any(), any(), any()
+                    );
+        }
     }
 
     @Nested
@@ -1152,6 +1242,16 @@ class AppointmentCommandServiceImplTest {
         void shouldConfirmBookedAppointmentSuccessfully() {
             Appointment appointment = AppointmentFixtures.persisted(customer, barber);
 
+            AppointmentProcedure appointmentProcedure = new AppointmentProcedure(
+                    appointment,
+                    procedure,
+                    new BigDecimal("50.00"),
+                    30
+            );
+
+            when(appointmentProcedureRepository.findByAppointmentId(appointment.getId()))
+                    .thenReturn(List.of(appointmentProcedure));
+
             when(appointmentRepository.findById(appointment.getId()))
                     .thenReturn(Optional.of(appointment));
 
@@ -1160,6 +1260,13 @@ class AppointmentCommandServiceImplTest {
 
             assertThat(response.status()).isEqualTo(AppointmentStatus.CONFIRMED);
             assertThat(appointment.getStatus()).isEqualTo(AppointmentStatus.CONFIRMED);
+            assertThat(response.procedures()).hasSize(1);
+
+            assertThat(response.procedures().get(0).price())
+                    .isEqualByComparingTo("50.00");
+
+            assertThat(response.procedures().get(0).durationMinutes())
+                    .isEqualTo(30);
         }
 
         @Test
@@ -1199,6 +1306,16 @@ class AppointmentCommandServiceImplTest {
         void shouldCancelBookedAppointmentSuccessfully() {
             Appointment appointment = AppointmentFixtures.persisted(customer, barber);
 
+            AppointmentProcedure appointmentProcedure = new AppointmentProcedure(
+                    appointment,
+                    procedure,
+                    new BigDecimal("50.00"),
+                    30
+            );
+
+            when(appointmentProcedureRepository.findByAppointmentId(appointment.getId()))
+                    .thenReturn(List.of(appointmentProcedure));
+
             when(appointmentRepository.findById(appointment.getId()))
                     .thenReturn(Optional.of(appointment));
 
@@ -1207,6 +1324,14 @@ class AppointmentCommandServiceImplTest {
 
             assertThat(response.status()).isEqualTo(AppointmentStatus.CANCELED);
             assertThat(appointment.getStatus()).isEqualTo(AppointmentStatus.CANCELED);
+
+            assertThat(response.procedures()).hasSize(1);
+
+            assertThat(response.procedures().get(0).price())
+                    .isEqualByComparingTo("50.00");
+
+            assertThat(response.procedures().get(0).durationMinutes())
+                    .isEqualTo(30);
         }
 
         @Test
@@ -1214,6 +1339,15 @@ class AppointmentCommandServiceImplTest {
         void shouldCancelConfirmedAppointmentSuccessfully() {
             Appointment appointment = AppointmentFixtures.persisted(customer, barber);
             appointment.setStatus(AppointmentStatus.CONFIRMED);
+            AppointmentProcedure appointmentProcedure = new AppointmentProcedure(
+                    appointment,
+                    procedure,
+                    new BigDecimal("50.00"),
+                    30
+            );
+
+            when(appointmentProcedureRepository.findByAppointmentId(appointment.getId()))
+                    .thenReturn(List.of(appointmentProcedure));
 
             when(appointmentRepository.findById(appointment.getId()))
                     .thenReturn(Optional.of(appointment));
@@ -1222,6 +1356,13 @@ class AppointmentCommandServiceImplTest {
                     commandService.cancelAppointment(appointment.getId());
 
             assertThat(response.status()).isEqualTo(AppointmentStatus.CANCELED);
+            assertThat(response.procedures()).hasSize(1);
+
+            assertThat(response.procedures().get(0).price())
+                    .isEqualByComparingTo("50.00");
+
+            assertThat(response.procedures().get(0).durationMinutes())
+                    .isEqualTo(30);
         }
 
         @Test
@@ -1274,6 +1415,16 @@ class AppointmentCommandServiceImplTest {
             Appointment appointment = AppointmentFixtures.persisted(customer, barber);
             appointment.setStatus(AppointmentStatus.CONFIRMED);
 
+            AppointmentProcedure appointmentProcedure = new AppointmentProcedure(
+                    appointment,
+                    procedure,
+                    new BigDecimal("50.00"),
+                    30
+            );
+
+            when(appointmentProcedureRepository.findByAppointmentId(appointment.getId()))
+                    .thenReturn(List.of(appointmentProcedure));
+
             when(appointmentRepository.findById(appointment.getId()))
                     .thenReturn(Optional.of(appointment));
 
@@ -1282,6 +1433,13 @@ class AppointmentCommandServiceImplTest {
 
             assertThat(response.status()).isEqualTo(AppointmentStatus.COMPLETED);
             assertThat(appointment.getStatus()).isEqualTo(AppointmentStatus.COMPLETED);
+            assertThat(response.procedures()).hasSize(1);
+
+            assertThat(response.procedures().get(0).price())
+                    .isEqualByComparingTo("50.00");
+
+            assertThat(response.procedures().get(0).durationMinutes())
+                    .isEqualTo(30);
         }
 
         @Test

@@ -8,7 +8,6 @@ import com.barbershop.booking.customers.models.Customer;
 import com.barbershop.booking.support.AppointmentFixtures;
 import com.barbershop.booking.support.BarberFixtures;
 import com.barbershop.booking.support.CustomerFixtures;
-import com.barbershop.booking.users.models.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -57,7 +56,7 @@ class AppointmentRepositoryTest {
     }
 
     private Appointment createAppointment() {
-        return AppointmentFixtures.appointment(customer, barber);
+        return createAppointment(startTime, endTime);
     }
 
     private Appointment createAppointment(
@@ -244,11 +243,11 @@ class AppointmentRepositoryTest {
         void shouldDetectOverlappingBookedAppointment() {
             entityManager.persistAndFlush(createAppointment());
 
-            boolean result = appointmentRepository.hasOverlappingAppointmentExcludingId(
+            boolean result = appointmentRepository.hasOverlappingAppointment(
                     barber.getId(),
                     AppointmentStatus.CANCELED,
-                    startTime.plusMinutes(45),
-                    startTime.plusMinutes(15)
+                    startTime.plusMinutes(15),
+                    startTime.plusMinutes(45)
             );
 
             assertThat(result).isTrue();
@@ -259,7 +258,7 @@ class AppointmentRepositoryTest {
         void shouldNotDetectOverlapWhenAppointmentsAreAdjacent() {
             entityManager.persistAndFlush(createAppointment());
 
-            boolean result = appointmentRepository.hasOverlappingAppointmentExcludingId(
+            boolean result = appointmentRepository.hasOverlappingAppointment(
                     barber.getId(),
                     AppointmentStatus.CANCELED,
                     endTime.plusMinutes(30),
@@ -277,7 +276,7 @@ class AppointmentRepositoryTest {
 
             entityManager.persistAndFlush(appointment);
 
-            boolean result = appointmentRepository.hasOverlappingAppointmentExcludingId(
+            boolean result = appointmentRepository.hasOverlappingAppointment(
                     barber.getId(),
                     AppointmentStatus.CANCELED,
                     endTime,
@@ -295,11 +294,11 @@ class AppointmentRepositoryTest {
 
             entityManager.persistAndFlush(appointment);
 
-            boolean result = appointmentRepository.hasOverlappingAppointmentExcludingId(
+            boolean result = appointmentRepository.hasOverlappingAppointment(
                     barber.getId(),
                     AppointmentStatus.CANCELED,
-                    endTime,
-                    startTime
+                    startTime,
+                    endTime
             );
 
             assertThat(result).isTrue();
@@ -311,7 +310,7 @@ class AppointmentRepositoryTest {
             Appointment saved = entityManager.persistAndFlush(createAppointment());
 
             boolean result =
-                    appointmentRepository.hasOverlappingAppointment(
+                    appointmentRepository.hasOverlappingAppointmentExcludingAppointmentId(
                             barber.getId(),
                             saved.getId(),
                             AppointmentStatus.CANCELED,
@@ -335,12 +334,12 @@ class AppointmentRepositoryTest {
             );
 
             boolean result =
-                    appointmentRepository.hasOverlappingAppointment(
+                    appointmentRepository.hasOverlappingAppointmentExcludingAppointmentId(
                             barber.getId(),
                             second.getId(),
                             AppointmentStatus.CANCELED,
-                            endTime,
-                            startTime
+                            startTime,
+                            endTime
                     );
 
             assertThat(result).isTrue();

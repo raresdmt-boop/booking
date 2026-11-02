@@ -28,6 +28,7 @@ import java.util.List;
 
 @Component
 @Order(1)
+@Profile("dev")
 public class DataSeeder implements CommandLineRunner {
 
     private final UserRepository userRepository;
@@ -58,8 +59,8 @@ public class DataSeeder implements CommandLineRunner {
     @Override
     public void run(String... args) {
 
-        appointmentProcedureRepository.deleteAll();
-        appointmentRepository.deleteAll();
+//        appointmentProcedureRepository.deleteAll();
+//        appointmentRepository.deleteAll();
 
         String email = "barber.seed@example.com";
 

@@ -1,12 +1,15 @@
 package com.barbershop.booking.appointments.services.appointment;
 
 import com.barbershop.booking.appointments.exceptions.AppointmentDuplicateProcedure;
+import com.barbershop.booking.appointments.exceptions.AppointmentProcedureBarberMismatch;
 import com.barbershop.booking.appointments.exceptions.AppointmentProcedureNotFound;
 import com.barbershop.booking.appointments.exceptions.AppointmentProceduresRequired;
+import com.barbershop.booking.appointments.models.Appointment;
 import com.barbershop.booking.appointments.repositories.AppointmentRepository;
 import com.barbershop.booking.appointments.services.appointment.interfaces.AppointmentAvailabilityService;
 import com.barbershop.booking.barbers.exceptions.BarberDoesNotHaveThisProcedure;
 import com.barbershop.booking.barbers.models.BarberSchedule;
+import com.barbershop.booking.barbers.models.BarberTimeOff;
 import com.barbershop.booking.barbers.repositories.BarberScheduleRepository;
 import com.barbershop.booking.barbers.repositories.BarberTimeOffRepository;
 import com.barbershop.booking.procedures.models.Procedure;
@@ -69,7 +72,7 @@ public class AppointmentAvailabilityServiceImpl
 
         for (Procedure procedure : procedures) {
             if (!procedure.getBarber().getId().equals(barberId)) {
-                throw new BarberDoesNotHaveThisProcedure();
+                throw new AppointmentProcedureBarberMismatch();
             }
         }
 
@@ -77,10 +80,6 @@ public class AppointmentAvailabilityServiceImpl
 
         for (Procedure procedure : procedures) {
             totalDuration += procedure.getDurationMinutes();
-        }
-
-        if (totalDuration >= 24 * 60) {
-            return List.of();
         }
 
         int dayOfWeek = date.getDayOfWeek().getValue();
@@ -92,6 +91,21 @@ public class AppointmentAvailabilityServiceImpl
         if (schedule == null) {
             return List.of();
         }
+        LocalDateTime dayStart = date.atStartOfDay();
+        LocalDateTime dayEnd = date.plusDays(1).atStartOfDay();
+
+        List<Appointment> appointments = appointmentRepository.findOverlappingAppointments(
+                barberId,
+                AppointmentStatus.CANCELED,
+                dayStart,
+                dayEnd
+        );
+
+        List<BarberTimeOff> timeOffs = barberTimeOffRepository.findOverlappingTimeOff(
+                barberId,
+                dayStart,
+                dayEnd
+        );
 
         List<LocalTime> availableSlots = new ArrayList<>();
 
@@ -101,19 +115,19 @@ public class AppointmentAvailabilityServiceImpl
         while (!slotStart.plusMinutes(totalDuration).isAfter(closingDateTime)) {
 
             LocalDateTime slotEnd = slotStart.plusMinutes(totalDuration);
+            LocalDateTime currentSlotStart = slotStart;
 
-            boolean occupied = appointmentRepository.hasOverlappingAppointmentExcludingId(
-                    barberId,
-                    AppointmentStatus.CANCELED,
-                    slotEnd,
-                    slotStart
-            );
+            boolean occupied = appointments.stream()
+                    .anyMatch(appointment ->
+                            appointment.getStartTime().isBefore(slotEnd)
+                                    && appointment.getEndTime().isAfter(currentSlotStart)
+                    );
 
-            boolean timeOff = barberTimeOffRepository.hasOverlappingTimeOff(
-                    barberId,
-                    slotStart,
-                    slotEnd
-            );
+            boolean timeOff = timeOffs.stream()
+                    .anyMatch(t ->
+                            t.getStartDatetime().isBefore(slotEnd)
+                                    && t.getEndDatetime().isAfter(currentSlotStart)
+                    );
 
             if (!occupied && !timeOff) {
                 availableSlots.add(slotStart.toLocalTime());

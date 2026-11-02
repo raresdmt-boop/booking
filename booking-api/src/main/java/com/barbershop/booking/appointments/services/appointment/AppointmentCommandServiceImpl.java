@@ -10,6 +10,7 @@ import com.barbershop.booking.appointments.models.Appointment;
 import com.barbershop.booking.appointments.models.AppointmentStatus;
 import com.barbershop.booking.appointments.repositories.AppointmentRepository;
 import com.barbershop.booking.appointments.services.appointment.interfaces.AppointmentCommandService;
+import com.barbershop.booking.barbers.exceptions.BarberNotActive;
 import com.barbershop.booking.barbers.exceptions.BarberNotFound;
 import com.barbershop.booking.barbers.models.Barber;
 import com.barbershop.booking.barbers.models.BarberSchedule;
@@ -19,6 +20,7 @@ import com.barbershop.booking.barbers.repositories.BarberTimeOffRepository;
 import com.barbershop.booking.customers.exceptions.CustomerNotFound;
 import com.barbershop.booking.customers.models.Customer;
 import com.barbershop.booking.customers.repository.CustomerRepository;
+import com.barbershop.booking.procedures.exceptions.ProcedureNotActive;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
@@ -71,7 +73,15 @@ public class AppointmentCommandServiceImpl implements AppointmentCommandService 
         Barber barber = barberRepository.findById(request.barberId())
                 .orElseThrow(BarberNotFound::new);
 
+        if (!barber.isActive()) {
+            throw new BarberNotActive();
+        }
+
         if (request.startTime() == null) {
+            throw new AppointmentInvalidTimeInterval();
+        }
+
+        if (request.startTime().isBefore(LocalDateTime.now())) {
             throw new AppointmentInvalidTimeInterval();
         }
 
@@ -103,6 +113,10 @@ public class AppointmentCommandServiceImpl implements AppointmentCommandService 
 
         for (Procedure procedure : procedures) {
 
+            if (!procedure.isActive()) {
+                throw new ProcedureNotActive();
+            }
+
             if (!procedure.getBarber().getId().equals(barber.getId())) {
                 throw new AppointmentProcedureBarberMismatch();
             }
@@ -117,11 +131,11 @@ public class AppointmentCommandServiceImpl implements AppointmentCommandService 
         validateBarberTimeOff(barber.getId(), request.startTime(), endTime);
 
         boolean unavailable =
-                appointmentRepository.hasOverlappingAppointmentExcludingId(
+                appointmentRepository.hasOverlappingAppointment(
                         barber.getId(),
                         AppointmentStatus.CANCELED,
-                        endTime,
-                        request.startTime()
+                        request.startTime(),
+                        endTime
                 );
 
         if (unavailable) {
@@ -160,9 +174,6 @@ public class AppointmentCommandServiceImpl implements AppointmentCommandService 
         return AppointmentResponse.from(savedAppointment, procedureResponses);
     }
 
-
-
-
     @Override
     @Transactional
     public AppointmentResponse updateAppointment(Long id, AppointmentUpdateRequest request) {
@@ -181,6 +192,11 @@ public class AppointmentCommandServiceImpl implements AppointmentCommandService 
             startTime = request.startTime();
         } else {
             startTime = appointment.getStartTime();
+        }
+
+        if (request.startTime() != null
+                && startTime.isBefore(LocalDateTime.now())) {
+            throw new AppointmentInvalidTimeInterval();
         }
 
         List<AppointmentProcedure> appointmentProcedures =
@@ -207,7 +223,7 @@ public class AppointmentCommandServiceImpl implements AppointmentCommandService 
             validateBarberTimeOff(appointment.getBarber().getId(), startTime, endTime);
 
             boolean unavailable =
-                    appointmentRepository.hasOverlappingAppointment(
+                    appointmentRepository.hasOverlappingAppointmentExcludingAppointmentId(
                             appointment.getBarber().getId(),
                             appointment.getId(),
                             AppointmentStatus.CANCELED,
@@ -250,7 +266,7 @@ public class AppointmentCommandServiceImpl implements AppointmentCommandService 
 
         appointment.setStatus(AppointmentStatus.CONFIRMED);
 
-        return AppointmentResponse.from(appointment);
+        return buildAppointmentResponse(appointment);
     }
 
     @Override
@@ -266,7 +282,7 @@ public class AppointmentCommandServiceImpl implements AppointmentCommandService 
 
         appointment.setStatus(AppointmentStatus.CANCELED);
 
-        return AppointmentResponse.from(appointment);
+        return buildAppointmentResponse(appointment);
     }
 
     @Override
@@ -281,10 +297,23 @@ public class AppointmentCommandServiceImpl implements AppointmentCommandService 
 
         appointment.setStatus(AppointmentStatus.COMPLETED);
 
-        return AppointmentResponse.from(appointment);
+        return buildAppointmentResponse(appointment);
     }
 
 
+    private AppointmentResponse buildAppointmentResponse(Appointment appointment) {
+
+        List<AppointmentProcedure> appointmentProcedures =
+                appointmentProcedureRepository.findByAppointmentId(appointment.getId());
+
+        List<AppointmentProcedureResponse> appointmentProceduresResponse =
+                appointmentProcedures
+                        .stream()
+                        .map(AppointmentProcedureResponse::from)
+                        .toList();
+
+        return AppointmentResponse.from(appointment, appointmentProceduresResponse);
+    }
 
     private Appointment findAppointment(Long id) {
         return appointmentRepository.findById(id)

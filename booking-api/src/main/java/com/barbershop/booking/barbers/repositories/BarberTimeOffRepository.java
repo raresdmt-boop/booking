@@ -5,6 +5,7 @@ import com.barbershop.booking.barbers.models.BarberTimeOff;
 import org.springframework.data.jpa.repository.JpaRepository;import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public interface BarberTimeOffRepository extends JpaRepository<BarberTimeOff, Long> {
 
@@ -16,6 +17,18 @@ public interface BarberTimeOffRepository extends JpaRepository<BarberTimeOff, Lo
         AND t.endDatetime > :startTime
         """)
     boolean hasOverlappingTimeOff(
+            @Param("barberId") Long barberId,
+            @Param("startTime") LocalDateTime startTime,
+            @Param("endTime") LocalDateTime endTime
+    );
+
+    @Query("""
+    SELECT t FROM BarberTimeOff t
+    WHERE t.barber.id = :barberId
+    AND t.startDatetime < :endTime
+    AND t.endDatetime > :startTime
+    """)
+    List<BarberTimeOff> findOverlappingTimeOff(
             @Param("barberId") Long barberId,
             @Param("startTime") LocalDateTime startTime,
             @Param("endTime") LocalDateTime endTime
