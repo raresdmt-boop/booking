@@ -1,0 +1,813 @@
+openapi: 3.1.0
+info:
+  title: booking-api
+  version: F1
+  description: |
+    Barbershop booking: barbers, their procedures, weekly schedule, time off and appointments.
+
+    This contract covers ONLY `booking-api` (the monolith) at the end of **F1** in `PLAN.pdf`.
+    F1 has no login: every route is open, there is no `security` yet. **F3** adds `bearerAuth`
+    (JWT from `POST /api/auth/login`), `/api/auth/**`, `/api/users/**`, `/api/customers/**` and 401 / 403 on every route.
+    Routes from F4 onwards (recurring appointments, occupancy, proposals, notifications) are not here yet.
+    Every new microservice gets its own contract when it appears in the plan
+    (`booking-agent` at F9 has only an MCP client, `booking-notifications` at F12 gets its own swagger).
+
+    **Already in the code (a078eee):** `POST /api/appointments`, `GET /api/appointments/availability`.
+    Everything else is what F1 asks for. Schemas that do not exist yet in the code
+    (schedule, time off) use the field names of the entities `BarberSchedule` and `BarberTimeOff`.
+
+    **Conventions**
+    - Ids are `Long` (`BIGINT` auto-increment).
+    - Times are local time (`LocalDateTime`), without a time zone: `2026-11-09T10:00:00`; dates `2026-11-09`; hours `09:00:00`.
+    - `null` fields are left out of responses (`spring.jackson.default-property-inclusion: non_null`).
+    - Errors use the `ApiError` shape `{timestamp, status, error, message, path, details[]}` (`GlobalExceptionHandler`);
+      `details` lists `field: message` on validation errors and is empty otherwise. Messages are in English.
+    - One validation for availability and POST (`BookingRules.validateBookable`): the same input gives the same code on both routes.
+security: []
+servers:
+  - url: http://localhost:8082
+    description: local (F1 runs on your local MySQL, localhost:3306)
+tags:
+  - name: barbers
+    description: Barber profiles
+  - name: procedures
+    description: Procedures of one barber, with his price and duration
+  - name: schedule
+    description: Weekly schedule and time off of a barber
+  - name: appointments
+    description: Appointments, availability and status changes
+
+paths:
+  /api/barbers:
+    get:
+      tags: [barbers]
+      summary: All barbers
+      operationId: getBarbers
+      responses:
+        '200':
+          description: OK; an empty array when there are none
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BarberResponse' }
+    post:
+      tags: [barbers]
+      summary: Add a barber (creates the user with role BARBER and the barber in one transaction)
+      description: The password is not part of F1 (it comes in F3); the user gets `password_hash = "!"`.
+      operationId: addBarber
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BarberCreateRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BarberResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/barbers/{id}:
+    parameters:
+      - $ref: '#/components/parameters/BarberIdPath'
+    get:
+      tags: [barbers]
+      summary: One barber
+      operationId: getBarberById
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BarberResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [barbers]
+      summary: Update a barber
+      description: Fields left out (or blank) stay unchanged.
+      operationId: updateBarber
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BarberUpdateRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BarberResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/barbers/{id}/deactivate:
+    parameters:
+      - $ref: '#/components/parameters/BarberIdPath'
+    patch:
+      tags: [barbers]
+      summary: Deactivate a barber
+      description: An inactive barber has no slots; availability and POST give 409 `Barber not active`.
+      operationId: deactivateBarber
+      responses:
+        '200':
+          description: Deactivated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BarberResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The barber still has future appointments that are not canceled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /api/barbers/{barberId}/procedures:
+    parameters:
+      - $ref: '#/components/parameters/BarberIdInPath'
+    get:
+      tags: [procedures]
+      summary: Procedures of a barber
+      operationId: getProceduresByBarberId
+      responses:
+        '200':
+          description: OK; an empty array when there are none
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ProcedureResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [procedures]
+      summary: Add a procedure to a barber
+      operationId: addProcedure
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProcedureCreateRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcedureResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Procedure name already exists for this barber
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /api/barbers/{barberId}/procedures/{procedureId}:
+    parameters:
+      - $ref: '#/components/parameters/BarberIdInPath'
+      - $ref: '#/components/parameters/ProcedureIdPath'
+    put:
+      tags: [procedures]
+      summary: Update a procedure of the barber
+      description: |
+        Read with `findByIdAndBarberId`: a procedure of another barber → 404, not 200.
+        Fields left out stay unchanged; `active: true` puts a deactivated procedure back.
+      operationId: updateProcedure
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProcedureUpdateRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcedureResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Procedure name already exists for this barber
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /api/barbers/{barberId}/procedures/{procedureId}/deactivate:
+    parameters:
+      - $ref: '#/components/parameters/BarberIdInPath'
+      - $ref: '#/components/parameters/ProcedureIdPath'
+    patch:
+      tags: [procedures]
+      summary: Deactivate a procedure of the barber
+      description: An inactive procedure gives the same 409 `Procedure not active` on availability and on POST.
+      operationId: deactivateProcedure
+      responses:
+        '200':
+          description: Deactivated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcedureResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/barbers/{id}/schedule:
+    parameters:
+      - $ref: '#/components/parameters/BarberIdPath'
+    get:
+      tags: [schedule]
+      summary: Weekly schedule of a barber
+      operationId: getSchedule
+      responses:
+        '200':
+          description: OK, one item per working day; an empty array when there is no schedule
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BarberScheduleResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [schedule]
+      summary: Replace the whole week
+      description: Total replacement; a day left out is a day off. Each day 1–7 at most once (400); `startTime < endTime` (400).
+      operationId: setSchedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: '#/components/schemas/BarberScheduleRequest' }
+      responses:
+        '200':
+          description: The new week
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BarberScheduleResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/barbers/{id}/time-off:
+    parameters:
+      - $ref: '#/components/parameters/BarberIdPath'
+    get:
+      tags: [schedule]
+      summary: Time off of a barber between two dates
+      operationId: getTimeOffs
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date, example: '2026-11-09' }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date, example: '2026-11-15' }
+      responses:
+        '200':
+          description: OK; an empty array when there is none
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BarberTimeOffResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [schedule]
+      summary: Add a time off
+      description: '`endDatetime > startDatetime` (400). Over an appointment that is not canceled → 409.'
+      operationId: createTimeOff
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BarberTimeOffCreateRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BarberTimeOffResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The time off overlaps an appointment that is not canceled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /api/barbers/{id}/time-off/{timeOffId}:
+    parameters:
+      - $ref: '#/components/parameters/BarberIdPath'
+      - name: timeOffId
+        in: path
+        required: true
+        schema: { type: integer, format: int64, example: 1 }
+    delete:
+      tags: [schedule]
+      summary: Delete a time off
+      operationId: deleteTimeOff
+      responses:
+        '204':
+          description: Deleted
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/appointments:
+    get:
+      tags: [appointments]
+      summary: Appointments of a barber on one day
+      operationId: getAppointmentsByBarberAndDate
+      parameters:
+        - name: barberId
+          in: query
+          required: true
+          schema: { type: integer, format: int64, example: 1 }
+        - name: date
+          in: query
+          required: true
+          schema: { type: string, format: date, example: '2026-11-09' }
+      responses:
+        '200':
+          description: OK; an empty array when there are none
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AppointmentResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [appointments]
+      summary: Book an appointment (in the code)
+      description: |
+        Same validation as availability (`BookingRules.validateBookable`): barber active, procedures existing,
+        of this barber, active, no duplicates, start not in the past. Then the schedule, the time off and the overlap.
+        `endTime` = start + the sum of the procedure durations; each procedure keeps its price and duration.
+      operationId: createAppointment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AppointmentCreateRequest' }
+      responses:
+        '201':
+          description: Booked, status `BOOKED`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentResponse' }
+        '400':
+          description: Validation failed, duplicate procedures, procedure of another barber or start in the past
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              examples:
+                inPast: { $ref: '#/components/examples/AppointmentInPast' }
+                validation: { $ref: '#/components/examples/ValidationFailed' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/BookingConflict' }
+
+  /api/appointments/availability:
+    get:
+      tags: [appointments]
+      summary: Free start times of a barber on one day, for the chosen procedures (in the code)
+      description: |
+        Says exactly what POST accepts: the same validation and the same codes.
+        For today only the slots that start after the current time.
+      operationId: getAvailableSlots
+      parameters:
+        - name: barberId
+          in: query
+          required: true
+          schema: { type: integer, format: int64, example: 1 }
+        - name: date
+          in: query
+          required: true
+          description: Not in the past (400)
+          schema: { type: string, format: date, example: '2026-11-09' }
+        - name: procedureIds
+          in: query
+          required: true
+          style: form
+          explode: false
+          description: Comma-separated, e.g. `procedureIds=1,2`
+          schema:
+            type: array
+            minItems: 1
+            items: { type: integer, format: int64 }
+          example: [1, 2]
+      responses:
+        '200':
+          description: OK; an empty array when nothing fits
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string, pattern: '^\d{2}:\d{2}(:\d{2})?$', example: '09:00:00' }
+        '400':
+          description: Missing parameter, invalid value or date in the past
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Barber not active or procedure not active, the same as on POST
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              examples:
+                barberNotActive: { $ref: '#/components/examples/BarberNotActive' }
+                procedureNotActive: { $ref: '#/components/examples/ProcedureNotActive' }
+
+  /api/appointments/{id}:
+    parameters:
+      - $ref: '#/components/parameters/AppointmentIdPath'
+    get:
+      tags: [appointments]
+      summary: One appointment
+      operationId: getAppointmentById
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [appointments]
+      summary: Reschedule an appointment
+      description: The new slot is validated again, like on POST. The barber and the procedures stay.
+      operationId: updateAppointment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AppointmentUpdateRequest' }
+      responses:
+        '200':
+          description: Rescheduled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentResponse' }
+        '400':
+          description: Validation failed or start in the past
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              examples:
+                inPast: { $ref: '#/components/examples/AppointmentInPast' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/BookingConflict' }
+
+  /api/appointments/{id}/confirm:
+    parameters:
+      - $ref: '#/components/parameters/AppointmentIdPath'
+    patch:
+      tags: [appointments]
+      summary: Confirm (only from BOOKED)
+      operationId: confirmAppointment
+      responses:
+        '200':
+          description: Status `CONFIRMED`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InvalidStatus' }
+
+  /api/appointments/{id}/complete:
+    parameters:
+      - $ref: '#/components/parameters/AppointmentIdPath'
+    patch:
+      tags: [appointments]
+      summary: Complete (only from CONFIRMED)
+      operationId: completeAppointment
+      responses:
+        '200':
+          description: Status `COMPLETED`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InvalidStatus' }
+
+  /api/appointments/{id}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/AppointmentIdPath'
+    patch:
+      tags: [appointments]
+      summary: Cancel (not from CANCELED or COMPLETED)
+      operationId: cancelAppointment
+      responses:
+        '200':
+          description: Status `CANCELED`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The appointment is already canceled or completed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                timestamp: '2026-11-09T08:00:00Z'
+                status: 409
+                error: Conflict
+                message: This appointment cannot be canceled
+                path: /api/appointments/1/cancel
+                details: []
+
+components:
+  parameters:
+    BarberIdPath:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64, example: 1 }
+    BarberIdInPath:
+      name: barberId
+      in: path
+      required: true
+      schema: { type: integer, format: int64, example: 1 }
+    ProcedureIdPath:
+      name: procedureId
+      in: path
+      required: true
+      schema: { type: integer, format: int64, example: 2 }
+    AppointmentIdPath:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64, example: 1 }
+
+  examples:
+    ValidationFailed:
+      value:
+        timestamp: '2026-11-09T08:00:00Z'
+        status: 400
+        error: Bad Request
+        message: Validation failed
+        path: /api/appointments
+        details: ['startTime: Start time is required']
+    AppointmentInPast:
+      value:
+        timestamp: '2026-11-09T08:00:00Z'
+        status: 400
+        error: Bad Request
+        message: Appointment start time must be in the future
+        path: /api/appointments
+        details: []
+    BarberNotWorking:
+      value:
+        timestamp: '2026-11-09T08:00:00Z'
+        status: 409
+        error: Conflict
+        message: Barber is not working at the selected time
+        path: /api/appointments
+        details: []
+    SlotTaken:
+      value:
+        timestamp: '2026-11-09T08:00:00Z'
+        status: 409
+        error: Conflict
+        message: The selected time slot is already booked
+        path: /api/appointments
+        details: []
+    BarberNotActive:
+      value:
+        timestamp: '2026-11-09T08:00:00Z'
+        status: 409
+        error: Conflict
+        message: Barber not active
+        path: /api/appointments/availability
+        details: []
+    ProcedureNotActive:
+      value:
+        timestamp: '2026-11-09T08:00:00Z'
+        status: 409
+        error: Conflict
+        message: Procedure not active
+        path: /api/appointments/availability
+        details: []
+
+  responses:
+    BadRequest:
+      description: Validation failed, missing parameter, invalid value or unreadable body
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+          examples:
+            validation: { $ref: '#/components/examples/ValidationFailed' }
+    NotFound:
+      description: Barber, procedure, appointment or time off not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+          example:
+            timestamp: '2026-11-09T08:00:00Z'
+            status: 404
+            error: Not Found
+            message: Barber not found
+            path: /api/barbers/99
+            details: []
+    Conflict:
+      description: Unique value already exists (for example the email of the barber)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+          example:
+            timestamp: '2026-11-09T08:00:00Z'
+            status: 409
+            error: Conflict
+            message: User email already exists
+            path: /api/barbers
+            details: []
+    BookingConflict:
+      description: |
+        Sunday, outside the schedule or in a time off → `BarberNotWorking`; overlap → `AppointmentTimeSlotUnavailable`;
+        barber or procedure not active (the same as on availability).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+          examples:
+            barberNotWorking: { $ref: '#/components/examples/BarberNotWorking' }
+            slotTaken: { $ref: '#/components/examples/SlotTaken' }
+            barberNotActive: { $ref: '#/components/examples/BarberNotActive' }
+            procedureNotActive: { $ref: '#/components/examples/ProcedureNotActive' }
+    InvalidStatus:
+      description: The status change is not allowed from the current status
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+          example:
+            timestamp: '2026-11-09T08:00:00Z'
+            status: 409
+            error: Conflict
+            message: Appointment invalid status
+            path: /api/appointments/1/complete
+            details: []
+
+  schemas:
+    ApiError:
+      type: object
+      required: [timestamp, status, error, message, path, details]
+      properties:
+        timestamp: { type: string, format: date-time, description: Instant (UTC), example: '2026-11-09T08:00:00Z' }
+        status: { type: integer, example: 409 }
+        error: { type: string, description: HTTP reason phrase, example: Conflict }
+        message: { type: string, example: Barber is not working at the selected time }
+        path: { type: string, example: /api/appointments }
+        details:
+          type: array
+          description: '`field: message` on validation errors; empty otherwise'
+          items: { type: string }
+
+    BarberCreateRequest:
+      type: object
+      required: [email, firstName, lastName, phone]
+      properties:
+        email: { type: string, format: email, description: Unique (409), example: andrei.popescu@example.com }
+        firstName: { type: string, minLength: 1, example: Andrei }
+        lastName: { type: string, minLength: 1, example: Popescu }
+        phone: { type: string, minLength: 1, example: '0712345678' }
+    BarberUpdateRequest:
+      type: object
+      properties:
+        firstName: { type: string, example: Andrei }
+        lastName: { type: string, example: Popescu }
+        phone: { type: string, example: '0712345678' }
+        active: { type: boolean, example: true }
+    BarberResponse:
+      type: object
+      required: [id, userId, firstName, lastName, phone, active, createdAt]
+      properties:
+        id: { type: integer, format: int64, example: 1 }
+        userId: { type: integer, format: int64, example: 2 }
+        firstName: { type: string, example: Andrei }
+        lastName: { type: string, example: Popescu }
+        phone: { type: string, example: '0712345678' }
+        active: { type: boolean, example: true }
+        createdAt: { type: string, pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$', example: '2026-11-03T10:00:00' }
+
+    ProcedureCreateRequest:
+      type: object
+      required: [barberId, name, durationMinutes, price]
+      properties:
+        barberId: { type: integer, format: int64, example: 1 }
+        name: { type: string, minLength: 1, description: Unique per barber (409), example: Haircut }
+        description: { type: string, example: Classic men's haircut }
+        durationMinutes: { type: integer, exclusiveMinimum: 0, example: 30 }
+        price: { type: number, minimum: 0, example: 50.00 }
+    ProcedureUpdateRequest:
+      type: object
+      properties:
+        name: { type: string, example: Premium Haircut }
+        description: { type: string, example: Haircut and styling }
+        durationMinutes: { type: integer, exclusiveMinimum: 0, example: 45 }
+        price: { type: number, minimum: 0, example: 80.00 }
+        active: { type: boolean, example: true }
+    ProcedureResponse:
+      type: object
+      required: [id, barberId, name, durationMinutes, price, active]
+      properties:
+        id: { type: integer, format: int64, example: 1 }
+        barberId: { type: integer, format: int64, example: 1 }
+        name: { type: string, example: Haircut }
+        description: { type: string, example: Classic men's haircut }
+        durationMinutes: { type: integer, example: 30 }
+        price: { type: number, example: 50.00 }
+        active: { type: boolean, example: true }
+
+    BarberScheduleRequest:
+      type: object
+      required: [dayOfWeek, startTime, endTime]
+      properties:
+        dayOfWeek: { type: integer, minimum: 1, maximum: 7, description: '1 = Monday … 7 = Sunday', example: 1 }
+        startTime: { type: string, pattern: '^\d{2}:\d{2}(:\d{2})?$', example: '09:00:00' }
+        endTime: { type: string, pattern: '^\d{2}:\d{2}(:\d{2})?$', description: After startTime, example: '17:00:00' }
+    BarberScheduleResponse:
+      type: object
+      required: [id, dayOfWeek, startTime, endTime]
+      properties:
+        id: { type: integer, format: int64, example: 1 }
+        dayOfWeek: { type: integer, example: 1 }
+        startTime: { type: string, pattern: '^\d{2}:\d{2}(:\d{2})?$', example: '09:00:00' }
+        endTime: { type: string, pattern: '^\d{2}:\d{2}(:\d{2})?$', example: '17:00:00' }
+
+    BarberTimeOffCreateRequest:
+      type: object
+      required: [startDatetime, endDatetime]
+      properties:
+        startDatetime: { type: string, pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$', example: '2026-11-13T12:00:00' }
+        endDatetime: { type: string, pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$', description: After startDatetime, example: '2026-11-13T13:00:00' }
+        reason: { type: string, maxLength: 200, example: Lunch break }
+    BarberTimeOffResponse:
+      type: object
+      required: [id, barberId, startDatetime, endDatetime]
+      properties:
+        id: { type: integer, format: int64, example: 1 }
+        barberId: { type: integer, format: int64, example: 1 }
+        startDatetime: { type: string, pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$', example: '2026-11-13T12:00:00' }
+        endDatetime: { type: string, pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$', example: '2026-11-13T13:00:00' }
+        reason: { type: string, example: Lunch break }
+
+    AppointmentStatus:
+      type: string
+      enum: [BOOKED, CONFIRMED, CANCELED, COMPLETED]
+    AppointmentCreateRequest:
+      type: object
+      required: [customerId, barberId, startTime, procedureIds]
+      properties:
+        customerId: { type: integer, format: int64, example: 1 }
+        barberId: { type: integer, format: int64, example: 1 }
+        startTime: { type: string, pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$', description: In the future (400), example: '2026-11-09T10:00:00' }
+        notes: { type: string, example: Short haircut }
+        procedureIds:
+          type: array
+          minItems: 1
+          description: Procedures of this barber, active, without duplicates
+          items: { type: integer, format: int64 }
+          example: [1]
+    AppointmentUpdateRequest:
+      type: object
+      properties:
+        startTime: { type: string, pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$', example: '2026-11-09T11:00:00' }
+        notes: { type: string, example: Haircut and beard trim }
+    AppointmentProcedureResponse:
+      type: object
+      required: [id, appointmentId, procedureId, price, durationMinutes]
+      properties:
+        id: { type: integer, format: int64, example: 1 }
+        appointmentId: { type: integer, format: int64, example: 1 }
+        procedureId: { type: integer, format: int64, example: 1 }
+        price: { type: number, description: Price at booking time, example: 50.00 }
+        durationMinutes: { type: integer, example: 30 }
+    AppointmentResponse:
+      type: object
+      required: [id, customerId, barberId, startTime, endTime, status, createdAt, procedures]
+      properties:
+        id: { type: integer, format: int64, example: 1 }
+        customerId: { type: integer, format: int64, example: 1 }
+        barberId: { type: integer, format: int64, example: 1 }
+        recurringAppointmentId: { type: integer, format: int64, description: Left out for normal appointments (F4) }
+        startTime: { type: string, pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$', example: '2026-11-09T10:00:00' }
+        endTime: { type: string, pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$', example: '2026-11-09T10:30:00' }
+        status: { $ref: '#/components/schemas/AppointmentStatus' }
+        notes: { type: string, example: Short haircut }
+        createdAt: { type: string, pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$', example: '2026-11-03T10:00:00' }
+        procedures:
+          type: array
+          items: { $ref: '#/components/schemas/AppointmentProcedureResponse' }
